@@ -16,7 +16,7 @@ except ImportError:
 from src.scrapers.ifood_scraper import IfoodScraper
 from src.models.category import Category
 from src.utils.helpers import ensure_directories
-from src.utils.database import DatabaseManager
+from src.database.database_adapter import get_database_manager
 from src.utils.error_handler import DataExtractionError, with_retry
 from src.config.settings import SETTINGS
 
@@ -28,7 +28,7 @@ class CategoryScraper(IfoodScraper):
         super().__init__(city, headless)
         self.categories: List[Category] = []
         self.categories_container_xpath = '//*[@id="__next"]/div[1]/main/div/div[2]/section/article[1]/section[1]/div/div/div[1]'
-        self.db = DatabaseManager()
+        self.db = get_database_manager()
     
     @with_retry(max_attempts=2, delay=3.0)
     def extract_categories(self):

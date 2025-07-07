@@ -4,69 +4,79 @@ __pycache__/
 *$py.class
 *.so
 .Python
-build/
-develop-eggs/
-dist/
-downloads/
-eggs/
-.eggs/
-lib/
-lib64/
-parts/
-sdist/
-var/
-wheels/
-*.egg-info/
-.installed.cfg
-*.egg
-MANIFEST
-
-# Virtual Environment
-venv/
 env/
-ENV/
-.venv/
-.env/
-
-# Environment Variables
+venv/
 .env
+*.pyc
+*.pyo
+*.pyd
 
-# IDEs
+# Logs
+logs/
+*.log
+
+# Backups e temporários
+backup_old_data/
+*.tmp
+*.temp
+
+# IDE
 .vscode/
 .idea/
 *.swp
 *.swo
-*~
-
-# Claude
-
-.Claude
-
-# Logs
-logs/*.log
-archive/
-
-# Screenshots
-screenshots/*.png
-screenshots/*.jpg
-
-# Data files (comment out if you want to track them)
-data/*.csv
-data/*.json
 
 # OS
 .DS_Store
 Thumbs.db
 
-# Temporary files
-*.tmp
-*.temp
-temp_data/
+# Project specific
+*.db
+*.sqlite
+*.csv
+!database/mysql_schema_fixed.sql
+!database/upsert_queries.sql
 
-# Browser artifacts
-.playwright/
+# Test e análise temporários
+test_*.py
+analyze_*.py
+cleanup_*.py
+project_analysis_*.py
+*_analysis_*.json
+RELATORIO_*.md
+COMO_*.md
 
-# Testing
+# Archive directory
+archive/compressed_data/*
+archive/screenshots/*
+!archive/.gitignore
+
+# Backup files
+*.backup
+*.bak
+*.old
+*_backup
+.env.*.backup
+
+# Cache
 .pytest_cache/
 .coverage
 htmlcov/
+.mypy_cache/
+
+# Browser and scraping
+playwright-*
+screenshots/
+*.png
+*.jpg
+*.jpeg
+
+# Export files
+export_*.csv
+restaurantes_*.csv
+*_export_*.csv
+
+# Data directories (keep structure, ignore content)
+data/restaurants/
+data/categories/
+data/products/

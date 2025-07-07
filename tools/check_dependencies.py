@@ -120,12 +120,12 @@ def test_basic_functionality():
         # Testa import dos módulos principais
         sys.path.insert(0, str(Path.cwd()))
         
-        from src.utils.database import DatabaseManager
+        from src.database.database_adapter import get_database_manager
         from src.scrapers.category_scraper import CategoryScraper
         from src.scrapers.restaurant_scraper import RestaurantScraper
         
         # Testa criação de objetos
-        db = DatabaseManager()
+        db = get_database_manager()
         category_scraper = CategoryScraper("São Paulo", headless=True)
         restaurant_scraper = RestaurantScraper("São Paulo", headless=True)
         

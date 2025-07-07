@@ -61,6 +61,11 @@ class BaseMenu:
         """Pausa para o usuário"""
         input(message)
     
+    def show_section_header(self, title: str):
+        """Mostra cabeçalho de seção"""
+        print(f"\n{title}")
+        print("═" * len(title))
+    
     def load_categories_from_file(self, file_path: Path) -> List[Dict[str, Any]]:
         """Carrega categorias de arquivo CSV"""
         categories = []

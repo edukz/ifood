@@ -5,18 +5,16 @@ Usa dados reais existentes e salva resultados em formato padrão
 """
 
 import asyncio
-import csv
-import json
 import time
 import random
 import platform
-import sqlite3
 import hashlib
 from pathlib import Path
 from datetime import datetime
 from typing import List, Dict, Any
 
 from src.utils.logger import setup_logger
+from src.database.database_adapter import get_database_manager
 
 def detect_windows():
     """Detecta se está rodando no Windows"""
@@ -28,25 +26,19 @@ class WindowsParallelScraper:
     def __init__(self, max_workers: int = 3):
         self.max_workers = max_workers
         self.results = []
-        self.project_root = Path(__file__).parent.parent.parent
-        self.data_dir = self.project_root / "data"
-        self.output_dir = self.project_root / "data" / "products"
-        self.db_path = self.data_dir / "products_database.db"
+        self.project_root = Path(__file__).parent.parent.parent.parent
         self.logger = setup_logger(self.__class__.__name__)
         
-        # Garante que diretórios existem
-        self.output_dir.mkdir(parents=True, exist_ok=True)
+        # Inicializa Database Manager V2
+        self.db_manager = get_database_manager()
         
-        # Inicializa banco de dados de deduplicação
-        self._init_deduplication_database()
+        # Carrega dados reais existentes do MySQL
+        self.restaurants_data = self._load_existing_restaurants_mysql()
+        self.products_templates = self._load_existing_products_mysql()
         
-        # Carrega dados reais existentes
-        self.restaurants_data = self._load_existing_restaurants()
-        self.products_templates = self._load_existing_products()
-        
-        print(f"🪟 Sistema Windows Nativo Iniciado")
+        print(f"🪟 Sistema Windows Nativo Iniciado - 100% MySQL")
         print(f"📊 Dados carregados: {len(self.restaurants_data)} restaurantes, {len(self.products_templates)} produtos template")
-        print(f"🗄️ Sistema de deduplicação ativo: {self.db_path.name}")
+        print(f"🗄️ Sistema de deduplicação MySQL ativo")
     
     def extract_restaurants_parallel(self, categories: List[Dict[str, Any]]) -> Dict[str, Any]:
         """Extrai restaurantes para categorias específicas usando geração baseada em dados reais"""
@@ -74,9 +66,9 @@ class WindowsParallelScraper:
                 # Gera restaurantes baseados em dados reais para esta categoria
                 restaurants = self._generate_restaurants_for_category(category_name, category_url)
                 
-                # Salva restaurantes no formato CSV
+                # Salva restaurantes no MySQL
                 if restaurants:
-                    saved_count = self._save_restaurants_to_csv(restaurants, category_name)
+                    saved_count = self._save_restaurants_to_mysql(restaurants, category_name)
                     stats['restaurants_generated'] += len(restaurants)
                     stats['restaurants_saved'] += saved_count
                     all_restaurants.extend(restaurants)
@@ -240,41 +232,54 @@ class WindowsParallelScraper:
         
         return f"{street}, {number} - {neighborhood}, Birigui - SP"
     
-    def _save_restaurants_to_csv(self, restaurants: List[Dict[str, Any]], category_name: str) -> int:
-        """Salva restaurantes em arquivo CSV"""
+    def _save_restaurants_to_mysql(self, restaurants: List[Dict[str, Any]], category_name: str) -> int:
+        """Salva restaurantes no MySQL"""
         try:
-            # Cria diretório de restaurantes se não existir
-            restaurants_dir = self.data_dir / "restaurants"
-            restaurants_dir.mkdir(exist_ok=True)
+            if not restaurants:
+                return 0
             
-            # Nome do arquivo baseado na categoria e data
-            date_str = datetime.now().strftime("%Y%m%d")
-            filename = f"restaurantes_{category_name.lower().replace(' ', '_')}_{date_str}.csv"
-            filepath = restaurants_dir / filename
+            # Converte restaurantes para o formato esperado pelo DatabaseManager
+            formatted_restaurants = []
+            for rest in restaurants:
+                formatted_rest = {
+                    'nome': rest.get('nome', rest.get('name', 'Sem nome')),
+                    'avaliacao': rest.get('avaliacao', rest.get('rating', 0)),
+                    'tempo_entrega': rest.get('tempo_entrega', rest.get('delivery_time', 'Não informado')),
+                    'taxa_entrega': rest.get('taxa_entrega', rest.get('delivery_fee', 'Não informado')),
+                    'distancia': rest.get('distancia', rest.get('distance', 'Não informado')),
+                    'url': rest.get('url', ''),
+                    'endereco': rest.get('endereco', rest.get('address', '')),
+                    'telefone': rest.get('telefone', rest.get('phone', '')),
+                    'horario_funcionamento': rest.get('horario_funcionamento', rest.get('opening_hours', '')),
+                    'pedido_minimo': rest.get('pedido_minimo', rest.get('minimum_order', '')),
+                    'promocoes': rest.get('promocoes', rest.get('promotions', []))
+                }
+                formatted_restaurants.append(formatted_rest)
             
-            # Escreve CSV
-            with open(filepath, 'w', newline='', encoding='utf-8') as csvfile:
-                if restaurants:
-                    fieldnames = list(restaurants[0].keys())
-                    writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
-                    writer.writeheader()
-                    writer.writerows(restaurants)
+            # Salva no MySQL usando o DatabaseManager
+            result = self.db_manager.save_restaurants(formatted_restaurants, category_name, "São Paulo")
             
-            self.logger.info(f"✅ Arquivo salvo: {filepath}")
-            return len(restaurants)
+            saved_count = result.get('new', 0) + result.get('updated', 0)
+            self.logger.info(f"✅ MySQL: {saved_count} restaurantes salvos para categoria {category_name}")
+            
+            return saved_count
             
         except Exception as e:
-            self.logger.error(f"❌ Erro ao salvar CSV: {e}")
+            self.logger.error(f"❌ Erro ao salvar restaurantes no MySQL: {e}")
             return 0
     
     def _load_existing_restaurants(self) -> List[Dict]:
-        """Carrega restaurantes reais dos arquivos existentes"""
+        """
+        OBSOLETO: Este método não é mais usado
+        Substituído por _load_existing_restaurants_mysql()
+        """
         restaurants = []
         
+        # OBSOLETO: Referências a arquivos CSV antigos (não usados)
         restaurant_files = [
-            "data/restaurants/ifood_data_restaurantes_acaí.csv",
-            "data/restaurants/ifood_data_restaurantes_brasileira.csv", 
-            "data/restaurants/ifood_data_restaurantes_japonesa.csv"
+            # "data/restaurants/ifood_data_restaurantes_acaí.csv",
+            # "data/restaurants/ifood_data_restaurantes_brasileira.csv", 
+            # "data/restaurants/ifood_data_restaurantes_japonesa.csv"
         ]
         
         for file_path in restaurant_files:
@@ -290,42 +295,53 @@ class WindowsParallelScraper:
         
         return restaurants
     
-    def _init_deduplication_database(self):
-        """Inicializa banco de dados SQLite para deduplicação"""
+    def _load_existing_restaurants_mysql(self) -> List[Dict]:
+        """Carrega restaurantes existentes do MySQL"""
         try:
-            with sqlite3.connect(self.db_path) as conn:
-                cursor = conn.cursor()
-                
-                # Cria tabela para produtos únicos
-                cursor.execute("""
-                    CREATE TABLE IF NOT EXISTS unique_products (
-                        id INTEGER PRIMARY KEY AUTOINCREMENT,
-                        product_hash TEXT UNIQUE NOT NULL,
-                        restaurant_name TEXT NOT NULL,
-                        product_name TEXT NOT NULL,
-                        description TEXT,
-                        price TEXT,
-                        category TEXT,
-                        first_scraped TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                        last_scraped TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                        scrape_count INTEGER DEFAULT 1,
-                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                    )
-                """)
-                
-                # Cria índice para otimizar buscas
-                cursor.execute("""
-                    CREATE INDEX IF NOT EXISTS idx_product_hash 
-                    ON unique_products(product_hash)
-                """)
-                
-                conn.commit()
-                
-            print(f"✅ Banco de dados de deduplicação inicializado")
+            from src.config.database import execute_query
             
+            restaurants = execute_query(
+                "SELECT * FROM restaurants ORDER BY rating DESC LIMIT 100",
+                fetch_all=True
+            )
+            
+            if restaurants:
+                self.logger.info(f"Carregados {len(restaurants)} restaurantes do MySQL")
+                return [dict(r) for r in restaurants]
+            else:
+                self.logger.warning("Nenhum restaurante encontrado no MySQL")
+                return []
+                
         except Exception as e:
-            self.logger.error(f"Erro ao inicializar banco de deduplicação: {e}")
-            print(f"⚠️ Erro no banco de deduplicação: {e}")
+            self.logger.error(f"Erro ao carregar restaurantes do MySQL: {e}")
+            return []
+    
+    def _load_existing_products_mysql(self) -> List[Dict]:
+        """Carrega produtos existentes do MySQL como templates"""
+        try:
+            from src.config.database import execute_query
+            
+            products = execute_query(
+                """
+                SELECT p.*, r.name as restaurant_name, r.category_name 
+                FROM products p 
+                JOIN restaurants r ON p.restaurant_id = r.id 
+                ORDER BY p.updated_at DESC 
+                LIMIT 50
+                """,
+                fetch_all=True
+            )
+            
+            if products:
+                self.logger.info(f"Carregados {len(products)} produtos template do MySQL")
+                return [dict(p) for p in products]
+            else:
+                self.logger.warning("Nenhum produto encontrado no MySQL")
+                return []
+                
+        except Exception as e:
+            self.logger.error(f"Erro ao carregar produtos do MySQL: {e}")
+            return []
     
     def _generate_product_hash(self, product: Dict) -> str:
         """Gera hash único para identificar produto"""
@@ -481,12 +497,16 @@ class WindowsParallelScraper:
         return len(unique_restaurants)
     
     def _load_existing_products(self) -> List[Dict]:
-        """Carrega produtos reais como templates"""
+        """
+        OBSOLETO: Este método não é mais usado
+        Substituído por _load_existing_products_mysql()
+        """
         products = []
         
+        # OBSOLETO: Referências a arquivos CSV antigos (não usados)
         product_files = [
-            "data/products/ifood_data_produtos_kanabara_açai.csv",
-            "data/products/ifood_data_produtos_natura_polpas_e_acai.csv"
+            # "data/products/ifood_data_produtos_kanabara_açai.csv",
+            # "data/products/ifood_data_produtos_natura_polpas_e_acai.csv"
         ]
         
         for file_path in product_files:
@@ -1038,115 +1058,80 @@ class WindowsParallelScraper:
         }
     
     def save_results(self, results: List[Dict]):
-        """Salva resultados em arquivo diário por categoria (um arquivo por categoria por dia)"""
-        # Data atual para arquivo diário
-        date_str = datetime.now().strftime("%Y-%m-%d")
+        """Salva resultados no MySQL por restaurante"""
+        print(f"\n💾 Salvando resultados no MySQL...")
         
-        # Processa todos os produtos e filtra duplicados
-        all_products = []
-        new_products = []
-        duplicate_count = 0
-        
-        print(f"\n🔍 Verificando duplicatas...")
+        # Processa resultados por restaurante
+        saved_stats = {
+            'total_products': 0,
+            'total_restaurants': 0,
+            'successful_saves': 0,
+            'failed_saves': 0
+        }
         
         for result in results:
             if result.get('success') and result.get('products'):
-                for product in result['products']:
-                    all_products.append(product)
+                restaurant_info = result.get('restaurant', {})
+                restaurant_name = restaurant_info.get('nome', restaurant_info.get('name', 'Unknown'))
+                restaurant_id = restaurant_info.get('id', str(hash(restaurant_name)))
+                
+                products = result['products']
+                
+                # Converte produtos para formato esperado pelo DatabaseManager
+                formatted_products = []
+                for product in products:
+                    formatted_product = {
+                        'nome': product.get('nome', product.get('name', 'Produto sem nome')),
+                        'descricao': product.get('descricao', product.get('description', '')),
+                        'preco': product.get('preco', product.get('price', 'Não informado')),
+                        'preco_original': product.get('preco_original', product.get('original_price')),
+                        'categoria_produto': product.get('categoria_produto', product.get('category', 'Não informado')),
+                        'disponivel': product.get('disponivel', product.get('available', True)),
+                        'imagem_url': product.get('imagem_url', product.get('image_url')),
+                        'tempo_preparo': product.get('tempo_preparo', product.get('preparation_time')),
+                        'serve_pessoas': product.get('serve_pessoas', product.get('serves_people')),
+                        'calorias': product.get('calorias', product.get('calories')),
+                        'tags': product.get('tags', []),
+                        'ingredientes': product.get('ingredientes', product.get('ingredients', [])),
+                        'observacoes': product.get('observacoes', product.get('notes', ''))
+                    }
+                    formatted_products.append(formatted_product)
+                
+                try:
+                    # Salva produtos no MySQL
+                    save_result = self.db_manager.save_products(
+                        formatted_products, 
+                        restaurant_name, 
+                        restaurant_id
+                    )
                     
-                    # Verifica se é duplicado
-                    if not self._is_product_duplicate(product):
-                        # Produto novo - registra no banco e adiciona à lista
-                        if self._register_product(product):
-                            new_products.append(product)
-                        else:
-                            duplicate_count += 1
-                    else:
-                        duplicate_count += 1
+                    saved_count = save_result.get('new', 0) + save_result.get('updated', 0)
+                    
+                    print(f"✅ {restaurant_name}: {saved_count} produtos salvos no MySQL")
+                    
+                    saved_stats['total_products'] += len(formatted_products)
+                    saved_stats['total_restaurants'] += 1
+                    saved_stats['successful_saves'] += saved_count
+                    
+                except Exception as e:
+                    print(f"❌ Erro ao salvar {restaurant_name}: {e}")
+                    saved_stats['failed_saves'] += len(formatted_products)
+                    self.logger.error(f"Erro ao salvar produtos de {restaurant_name}: {e}")
         
-        print(f"📊 Produtos analisados: {len(all_products)}")
-        print(f"✅ Produtos novos: {len(new_products)}")
-        print(f"🔄 Produtos duplicados: {duplicate_count}")
+        print(f"\n📊 Resumo do salvamento MySQL:")
+        print(f"  • Restaurantes processados: {saved_stats['total_restaurants']}")
+        print(f"  • Produtos analisados: {saved_stats['total_products']}")  
+        print(f"  • Produtos salvos: {saved_stats['successful_saves']}")
+        print(f"  • Falhas: {saved_stats['failed_saves']}")
         
-        # Se não há produtos novos, não adiciona ao arquivo
-        if not new_products:
-            print("⚠️  Todos os produtos já existem. Nenhum dado será adicionado.")
-            return None
-        
-        # Agrupa produtos novos por categoria
-        products_by_category = {}
-        for product in new_products:
-            category = product.get('restaurant_category', 'outros')
-            if category not in products_by_category:
-                products_by_category[category] = []
-            products_by_category[category].append(product)
-        
-        saved_files = []
-        
-        # Salva um arquivo por categoria
-        for category, category_products in products_by_category.items():
-            # Limpa nome da categoria para usar no arquivo
-            category_clean = category.lower().replace(' ', '_').replace('ç', 'c').replace('ã', 'a').replace('ê', 'e')
-            
-            # Nome do arquivo diário por categoria
-            filename = f"produtos_{category_clean}_{date_str}.csv"
-            filepath = self.output_dir / filename
-            
-            # Verifica se arquivo da categoria já existe hoje
-            existing_products = []
-            file_exists = filepath.exists()
-            
-            if file_exists:
-                # Lê produtos existentes
-                with open(filepath, 'r', encoding='utf-8') as f:
-                    reader = csv.DictReader(f)
-                    existing_products = list(reader)
-                print(f"📁 Arquivo {category} do dia encontrado com {len(existing_products)} produtos")
-            
-            # Combina produtos existentes com novos
-            all_category_products = existing_products + category_products
-            
-            # Reescreve arquivo com todos os produtos da categoria
-            with open(filepath, 'w', newline='', encoding='utf-8') as f:
-                if all_category_products:
-                    fieldnames = all_category_products[0].keys()
-                    writer = csv.DictWriter(f, fieldnames=fieldnames)
-                    writer.writeheader()
-                    writer.writerows(all_category_products)
-            
-            if file_exists:
-                print(f"📝 Arquivo {category} atualizado: {filepath.name}")
-                print(f"  ➕ Adicionados: {len(category_products)} | 📊 Total: {len(all_category_products)}")
-            else:
-                print(f"💾 Novo arquivo {category} criado: {filepath.name}")
-                print(f"  📦 Produtos: {len(category_products)}")
-            
-            # Salva também em JSON para backup
-            json_filepath = filepath.with_suffix('.json')
-            category_json_data = {
-                'date': date_str,
-                'category': category,
-                'last_update': datetime.now().isoformat(),
-                'total_products': len(all_category_products),
-                'new_products_added': len(category_products),
-                'restaurants': self._count_restaurants_in_products(all_category_products),
-                'products': all_category_products
-            }
-            
-            with open(json_filepath, 'w', encoding='utf-8') as f:
-                json.dump(category_json_data, f, ensure_ascii=False, indent=2)
-            
-            # Atualiza arquivo de índice para esta categoria
-            self._update_daily_category_index(filepath, category, all_category_products, len(category_products))
-            
-            saved_files.append(str(filepath))
-        
-        print(f"\n✅ Total de arquivos atualizados: {len(saved_files)}")
-        
-        return saved_files
+        return saved_stats
     
     def _update_index_file(self, filepath: Path, results: List[Dict], products: List[Dict]):
-        """Atualiza arquivo de índice com informações sobre as extrações"""
+        """
+        OBSOLETO: Sistema de índices CSV não usado no sistema MySQL
+        Este método foi substituído pelo sistema de monitoramento do MonitoredDatabaseManager
+        """
+        return  # Método obsoleto - não faz nada no sistema MySQL
         index_file = self.data_dir / "INDICE_PRODUTOS.md"
         
         # Prepara informações para o índice
@@ -1265,8 +1250,9 @@ class WindowsParallelScraper:
                 content += "Sistema de arquivo único por dia - dados acumulados automaticamente.\\n\\n"
                 content += "---\\n\\n"
             
-            # Busca entrada do dia atual
-            day_section = f"## 📁 produtos_diario_{date_str}.csv"
+            # OBSOLETO: Sistema de índices CSV não usado mais
+            # day_section = f"## 📁 produtos_diario_{date_str}.csv"
+            return  # Método obsoleto - não faz nada no sistema MySQL
             
             if day_section in content:
                 # Atualiza entrada existente

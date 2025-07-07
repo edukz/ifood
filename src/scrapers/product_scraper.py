@@ -6,7 +6,7 @@ from playwright.sync_api import Playwright, TimeoutError
 from src.scrapers.ifood_scraper import IfoodScraper
 from src.models.product import Product
 from src.utils.helpers import ensure_directories
-from src.utils.database import DatabaseManager
+from src.database.database_adapter import get_database_manager
 from src.utils.error_handler import (
     safe_click, safe_fill, validate_page_loaded, 
     with_retry, NavigationError, ElementNotFoundError, DataExtractionError
@@ -62,7 +62,7 @@ class ProductScraper(IfoodScraper):
             'ul[role="list"]'
         ]
         
-        self.db = DatabaseManager()
+        self.db = get_database_manager()
         self.current_restaurant = None
         self.current_restaurant_id = None
     

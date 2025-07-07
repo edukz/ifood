@@ -3,7 +3,7 @@ from typing import List, Dict, Any
 from playwright.sync_api import Playwright, TimeoutError
 from src.scrapers.base import BaseScraper
 from src.config.settings import SETTINGS, SELECTORS
-from src.utils.helpers import save_to_csv, ensure_directories
+from src.utils.helpers import ensure_directories
 from src.utils.human_behavior import HumanBehavior
 from src.utils.error_handler import (
     safe_click, safe_fill, validate_page_loaded, 
@@ -181,11 +181,26 @@ class IfoodScraper(BaseScraper):
             raise
     
     def save_data(self):
-        """Salva os dados extraídos"""
+        """Salva os dados extraídos no MySQL"""
         if self.restaurants_data:
-            filename = save_to_csv(self.restaurants_data)
-            self.logger.info(f"Dados salvos em: {filename}")
-            return filename
+            from src.utils.database_mysql_monitored import MonitoredDatabaseManager
+            
+            db_manager = MonitoredDatabaseManager(
+                chunk_size=500,
+                smart_mode=True,
+                enable_monitoring=True
+            )
+            
+            # Salva categorias se houver
+            if hasattr(self, 'categories_data') and self.categories_data:
+                cat_result = db_manager.save_categories(self.categories_data, "São Paulo")
+                self.logger.info(f"Categorias salvas no MySQL: {cat_result}")
+            
+            # Salva restaurantes
+            rest_result = db_manager.save_restaurants(self.restaurants_data, "Geral", "São Paulo")
+            self.logger.info(f"Restaurantes salvos no MySQL: {rest_result}")
+            
+            return f"MySQL: {rest_result.get('new', 0)} novos, {rest_result.get('updated', 0)} atualizados"
         else:
             self.logger.warning("Nenhum dado para salvar")
             return None

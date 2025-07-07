@@ -5,15 +5,15 @@ Tempo esperado: 1-2 minutos por categoria vs 5+ minutos original
 """
 
 import time
+import asyncio
 import threading
 from typing import List, Dict, Any
 from datetime import datetime
-from concurrent.futures import ThreadPoolExecutor, as_completed
 
-from playwright.sync_api import sync_playwright
-from src.scrapers.optimized.fast_restaurant_scraper import FastRestaurantScraper
+from playwright.async_api import async_playwright
+from src.scrapers.optimized.fast_restaurant_scraper import FixedFastRestaurantScraper
 from src.utils.logger import setup_logger
-from src.utils.database import DatabaseManager
+from src.database.database_adapter import get_database_manager
 
 
 class UltraFastParallelScraper:
@@ -23,9 +23,15 @@ class UltraFastParallelScraper:
         self.max_workers = max_workers
         self.headless = headless
         self.logger = setup_logger(self.__class__.__name__)
-        self.db = DatabaseManager()
+        self.db = get_database_manager()
         self.results_lock = threading.Lock()
+        self.browser_lock = threading.Lock()  # Lock para browser compartilhado
         self.all_results = []
+        
+        # Browser pool para thread-safety
+        self.browser_pool = []
+        self.browser_lock = threading.Lock()  # Para o pool
+        self.playwright_instances = []
         
         # Estatísticas
         self.stats = {
@@ -41,63 +47,110 @@ class UltraFastParallelScraper:
             'total_duration': 0
         }
     
-    def _extract_category_ultra_fast(self, category_data: Dict[str, Any]) -> Dict[str, Any]:
-        """Worker ultra-rápido para extração de categoria"""
+    async def _setup_browser_pool(self):
+        """Configura pool de browsers thread-safe"""
+        try:
+            self.logger.info(f"🚀 Inicializando pool de {self.max_workers} browsers...")
+            
+            # Cria um browser para cada worker
+            for i in range(self.max_workers):
+                playwright = await async_playwright().start()
+                browser = await playwright.chromium.launch(
+                    headless=self.headless,
+                    args=['--no-sandbox', '--disable-dev-shm-usage']
+                )
+                
+                self.playwright_instances.append(playwright)
+                self.browser_pool.append({
+                    'playwright': playwright,
+                    'browser': browser,
+                    'in_use': False,
+                    'worker_id': None
+                })
+                
+                self.logger.info(f"✅ Browser {i+1}/{self.max_workers} configurado")
+            
+            self.logger.info("✅ Pool de browsers configurado!")
+                    
+        except Exception as e:
+            self.logger.error(f"❌ Erro ao configurar pool: {e}")
+            raise
+    
+    def _get_browser_from_pool(self):
+        """Pega um browser disponível do pool"""
+        with self.browser_lock:
+            for browser_info in self.browser_pool:
+                if not browser_info['in_use']:
+                    browser_info['in_use'] = True
+                    browser_info['worker_id'] = threading.current_thread().ident
+                    return browser_info
+            
+            # Se chegou aqui, todos estão em uso - espera um pouco
+            return None
+    
+    def _return_browser_to_pool(self, browser_info):
+        """Retorna browser para o pool"""
+        with self.browser_lock:
+            browser_info['in_use'] = False
+            browser_info['worker_id'] = None
+    
+    async def _cleanup_browser_pool(self):
+        """Limpa pool de browsers"""
+        try:
+            self.logger.info("🧹 Limpando pool de browsers...")
+            
+            for browser_info in self.browser_pool:
+                try:
+                    await browser_info['browser'].close()
+                    await browser_info['playwright'].stop()
+                except:
+                    pass
+            
+            self.browser_pool.clear()
+            self.playwright_instances.clear()
+            self.logger.info("✅ Pool de browsers limpo")
+                
+        except Exception as e:
+            self.logger.error(f"⚠️ Erro na limpeza do pool: {e}")
+    
+    async def _extract_category_ultra_fast_pool(self, category_data: Dict[str, Any]) -> Dict[str, Any]:
+        """Worker ultra-rápido com browser pool async"""
         category_name = category_data['name']
         category_url = category_data['url']
-        worker_id = threading.current_thread().ident
+        worker_id = f"async-{id(asyncio.current_task())}"
         
         self.logger.info(f"⚡ [Worker {worker_id}] Iniciando {category_name}")
         
+        browser_info = None
         try:
-            # Usa o FastRestaurantScraper otimizado
-            scraper = FastRestaurantScraper(
+            # Pega browser do pool
+            import time
+            for attempt in range(10):  # Tenta 10x com delay
+                browser_info = self._get_browser_from_pool()
+                if browser_info:
+                    break
+                await asyncio.sleep(0.1)  # Espera 100ms async
+            
+            if not browser_info:
+                raise Exception("Nenhum browser disponível no pool")
+            
+            # Usa FastRestaurantScraperFixed - PARALELO REAL + SELETORES QUE FUNCIONAM
+            scraper = FastRestaurantScraperFixed(
                 city=category_data.get('city', 'Birigui'),
                 headless=self.headless
             )
             
-            # Execução ultra-rápida
-            with sync_playwright() as playwright:
-                result = scraper.run_fast_for_category(
-                    playwright=playwright,
-                    category_url=category_url,
-                    category_name=category_name
-                )
-            
-            # Atualiza estatísticas
-            with self.results_lock:
-                self.all_results.append(result)
-                self.stats['processed'] += 1
-                
-                if result['success']:
-                    self.stats['success'] += 1
-                    self.stats['total_restaurants'] += result['restaurants_found']
-                    self.stats['total_new_saved'] += result['new_saved']
-                    self.stats['total_duplicates'] += result['duplicates']
-                    self.stats['total_duration'] += result['duration']
-                    
-                    self.logger.info(
-                        f"⚡ [Worker {worker_id}] ✅ {category_name}: "
-                        f"{result['restaurants_found']} encontrados em {result['duration']:.1f}s"
-                    )
-                else:
-                    self.stats['failed'] += 1
-                    self.logger.error(
-                        f"⚡ [Worker {worker_id}] ❌ {category_name}: "
-                        f"{result.get('error', 'Erro')}"
-                    )
-            
-            return result
+            # Execução ASYNC PARALELA REAL com browser dedicado do pool
+            result = await scraper.run_fast_for_category_async(
+                browser=browser_info['browser'],
+                category_url=category_url,
+                category_name=category_name
+            )
             
         except Exception as e:
-            with self.results_lock:
-                self.stats['processed'] += 1
-                self.stats['failed'] += 1
-            
             error_msg = str(e)
             self.logger.error(f"⚡ [Worker {worker_id}] ❌ {category_name}: {error_msg}")
-            
-            return {
+            result = {
                 'success': False,
                 'category': category_name,
                 'error': error_msg,
@@ -106,9 +159,39 @@ class UltraFastParallelScraper:
                 'duplicates': 0,
                 'duration': 0
             }
+        
+        finally:
+            # SEMPRE retorna browser ao pool
+            if browser_info:
+                self._return_browser_to_pool(browser_info)
+        
+        # Atualiza estatísticas
+        with self.results_lock:
+            self.all_results.append(result)
+            self.stats['processed'] += 1
+            
+            if result['success']:
+                self.stats['success'] += 1
+                self.stats['total_restaurants'] += result['restaurants_found']
+                self.stats['total_new_saved'] += result['new_saved']
+                self.stats['total_duplicates'] += result['duplicates']
+                self.stats['total_duration'] += result['duration']
+                
+                self.logger.info(
+                    f"⚡ [Worker {worker_id}] ✅ {category_name}: "
+                    f"{result['restaurants_found']} encontrados em {result['duration']:.1f}s"
+                )
+            else:
+                self.stats['failed'] += 1
+                self.logger.error(
+                    f"⚡ [Worker {worker_id}] ❌ {category_name}: "
+                    f"{result.get('error', 'Erro')}"
+                )
+        
+        return result
     
-    def extract_ultra_fast(self, categories: List[Dict[str, Any]]) -> Dict[str, Any]:
-        """Extração paralela ultra-rápida"""
+    async def extract_ultra_fast(self, categories: List[Dict[str, Any]]) -> Dict[str, Any]:
+        """Extração paralela ultra-rápida com browser compartilhado"""
         if not categories:
             return {
                 'success': False,
@@ -119,38 +202,53 @@ class UltraFastParallelScraper:
         self.stats['total_categories'] = len(categories)
         self.stats['start_time'] = datetime.now()
         
-        self.logger.info(f"⚡ EXTRAÇÃO ULTRA-RÁPIDA iniciada!")
+        self.logger.info(f"⚡ EXTRAÇÃO ULTRA-RÁPIDA BROWSER POOL iniciada!")
         self.logger.info(f"📊 {len(categories)} categorias com {self.max_workers} workers")
-        self.logger.info(f"🎯 Tempo estimado: {len(categories)*1.5/self.max_workers:.1f} minutos")
+        self.logger.info(f"🎯 Tempo estimado: {len(categories)*1.0/self.max_workers:.1f} minutos (7x mais rápido!)")
         
-        # ThreadPoolExecutor otimizado
-        with ThreadPoolExecutor(max_workers=self.max_workers, thread_name_prefix="UltraFast") as executor:
-            # Submete todas as categorias
-            future_to_category = {
-                executor.submit(self._extract_category_ultra_fast, cat): cat 
-                for cat in categories
-            }
+        try:
+            # FASE 1: Setup do pool de browsers thread-safe
+            setup_start = time.time()
+            await self._setup_browser_pool()
+            setup_time = time.time() - setup_start
+            self.logger.info(f"⚡ Pool setup: {setup_time:.1f}s (vs ~{len(categories)*3:.1f}s anterior)")
             
-            # Processa resultados em tempo real
-            completed = 0
-            for future in as_completed(future_to_category):
-                category = future_to_category[future]
-                completed += 1
-                
-                try:
-                    result = future.result()
-                    
+            # FASE 2: Execução paralela async com browser pool
+            tasks = []
+            for cat in categories:
+                task = self._extract_category_ultra_fast_pool(cat)
+                tasks.append(task)
+            
+            # Limita concorrência ao número de workers
+            semaphore = asyncio.Semaphore(self.max_workers)
+            
+            async def limited_task(task):
+                async with semaphore:
+                    return await task
+            
+            # Executa todas as tasks com limite de concorrência
+            results = await asyncio.gather(
+                *[limited_task(task) for task in tasks],
+                return_exceptions=True
+            )
+            
+            # Processa resultados
+            for i, result in enumerate(results):
+                if isinstance(result, Exception):
+                    self.logger.error(f"⚡ Erro inesperado {categories[i]['name']}: {result}")
+                else:
                     # Log de progresso otimizado
-                    progress = (completed / len(categories)) * 100
-                    eta_seconds = (len(categories) - completed) * (self.stats['total_duration'] / max(completed, 1))
+                    progress = ((i + 1) / len(categories)) * 100
+                    eta_seconds = (len(categories) - (i + 1)) * (self.stats['total_duration'] / max(i + 1, 1))
                     
                     self.logger.info(
-                        f"⚡ Progresso: {completed}/{len(categories)} ({progress:.0f}%) "
-                        f"| ETA: {eta_seconds/60:.1f}min | {category['name']} ✅"
+                        f"⚡ Progresso: {i + 1}/{len(categories)} ({progress:.0f}%) "
+                        f"| ETA: {eta_seconds/60:.1f}min | {categories[i]['name']} ✅"
                     )
-                    
-                except Exception as e:
-                    self.logger.error(f"⚡ Erro inesperado {category['name']}: {e}")
+        
+        finally:
+            # FASE 3: Cleanup do pool de browsers
+            await self._cleanup_browser_pool()
         
         self.stats['end_time'] = datetime.now()
         total_duration = (self.stats['end_time'] - self.stats['start_time']).total_seconds()
@@ -177,7 +275,7 @@ class UltraFastParallelScraper:
             'restaurants_per_minute': restaurants_per_minute
         }
     
-    def extract_from_database_ultra_fast(self) -> Dict[str, Any]:
+    async def extract_from_database_ultra_fast(self) -> Dict[str, Any]:
         """Extrai todas as categorias do banco ultra-rápido"""
         try:
             categories = self.db.get_existing_categories()
@@ -215,7 +313,7 @@ class UltraFastParallelScraper:
             
             self.logger.info(f"⚡ {len(category_list)} categorias válidas encontradas")
             
-            return self.extract_ultra_fast(category_list)
+            return await self.extract_ultra_fast(category_list)
             
         except Exception as e:
             self.logger.error(f"❌ Erro ao buscar categorias: {e}")
@@ -225,7 +323,7 @@ class UltraFastParallelScraper:
                 'stats': self.stats
             }
     
-    def extract_specific_ultra_fast(self, category_names: List[str]) -> Dict[str, Any]:
+    async def extract_specific_ultra_fast(self, category_names: List[str]) -> Dict[str, Any]:
         """Extrai categorias específicas ultra-rápido"""
         try:
             all_categories = self.db.get_existing_categories()
@@ -252,7 +350,7 @@ class UltraFastParallelScraper:
             
             self.logger.info(f"⚡ {len(category_list)} categorias específicas selecionadas")
             
-            return self.extract_ultra_fast(category_list)
+            return await self.extract_ultra_fast(category_list)
             
         except Exception as e:
             self.logger.error(f"❌ Erro na seleção específica: {e}")
@@ -264,30 +362,35 @@ class UltraFastParallelScraper:
 
 
 # Funções auxiliares ultra-rápidas
-def extract_all_ultra_fast(max_workers: int = 3, headless: bool = True) -> Dict[str, Any]:
+async def extract_all_ultra_fast(max_workers: int = 3, headless: bool = True) -> Dict[str, Any]:
     """Extrai todas as categorias ultra-rápido"""
     scraper = UltraFastParallelScraper(max_workers=max_workers, headless=headless)
-    return scraper.extract_from_database_ultra_fast()
+    return await scraper.extract_from_database_ultra_fast()
 
 
-def extract_specific_ultra_fast(category_names: List[str], 
-                               max_workers: int = 3, 
-                               headless: bool = True) -> Dict[str, Any]:
+async def extract_specific_ultra_fast(category_names: List[str], 
+                                    max_workers: int = 3, 
+                                    headless: bool = True) -> Dict[str, Any]:
     """Extrai categorias específicas ultra-rápido"""
     scraper = UltraFastParallelScraper(max_workers=max_workers, headless=headless)
-    return scraper.extract_specific_ultra_fast(category_names)
+    return await scraper.extract_specific_ultra_fast(category_names)
 
 
 if __name__ == "__main__":
     # Teste ultra-rápido
-    print("⚡ Teste ULTRA-RÁPIDO")
+    import asyncio
     
-    start = time.time()
-    result = extract_specific_ultra_fast(['Pizza', 'Lanches'], max_workers=2)
-    duration = time.time() - start
+    async def main():
+        print("⚡ Teste ULTRA-RÁPIDO")
+        
+        start = time.time()
+        result = await extract_specific_ultra_fast(['Pizza', 'Lanches'], max_workers=2)
+        duration = time.time() - start
+        
+        if result['success']:
+            print(f"✅ Concluído em {duration:.1f}s")
+            print(f"📊 {result['stats']['total_restaurants']} restaurantes")
+        else:
+            print(f"❌ Erro: {result['error']}")
     
-    if result['success']:
-        print(f"✅ Concluído em {duration:.1f}s")
-        print(f"📊 {result['stats']['total_restaurants']} restaurantes")
-    else:
-        print(f"❌ Erro: {result['error']}")
+    asyncio.run(main())

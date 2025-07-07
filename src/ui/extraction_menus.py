@@ -61,9 +61,9 @@ class ExtractionMenus(BaseMenu):
         
         # Verificar se há categorias no banco de dados
         try:
-            from src.utils.database import DatabaseManager
-            db = DatabaseManager()
-            categories = db.get_existing_categories("Birigui")
+            from src.database.database_adapter import get_database_manager
+            db = get_database_manager()
+            categories = db.get_categories("Birigui")
         except Exception as e:
             self.logger.error(f"Erro ao acessar banco: {e}")
             categories = []

@@ -3,6 +3,7 @@ import os
 from datetime import datetime
 from pathlib import Path
 from src.config.settings import SETTINGS
+from src.utils.colors import Colors, ColorPrinter
 
 
 # Cache global de loggers para evitar múltiplos arquivos
@@ -50,6 +51,41 @@ def setup_file_handler():
     return _log_file_handler
 
 
+class ColoredFormatter(logging.Formatter):
+    """Formatter customizado com cores"""
+    
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.cp = ColorPrinter()
+    
+    def format(self, record):
+        # Salva o levelname original
+        levelname_orig = record.levelname
+        
+        # Aplica cores baseado no nível
+        if record.levelname == 'DEBUG':
+            record.levelname = self.cp.dim(f"[{record.levelname}]")
+        elif record.levelname == 'INFO':
+            record.levelname = self.cp.info(f"[{record.levelname}]", bold=True)
+        elif record.levelname == 'WARNING':
+            record.levelname = self.cp.warning(f"[{record.levelname}]", bold=True)
+        elif record.levelname == 'ERROR':
+            record.levelname = self.cp.error(f"[{record.levelname}]", bold=True)
+        elif record.levelname == 'CRITICAL':
+            record.levelname = self.cp.error(f"[CRITICAL]", bold=True)
+        
+        # Formata o nome do logger
+        record.name = self.cp.highlight(record.name)
+        
+        # Formata a mensagem
+        formatted = super().format(record)
+        
+        # Restaura o levelname original
+        record.levelname = levelname_orig
+        
+        return formatted
+
+
 def setup_logger(name: str = "ifood_scraper") -> logging.Logger:
     """
     Configura e retorna um logger personalizado.
@@ -71,8 +107,8 @@ def setup_logger(name: str = "ifood_scraper") -> logging.Logger:
     console_handler = logging.StreamHandler()
     console_handler.setLevel(logging.INFO)
     
-    # Formatter simples para console
-    console_formatter = logging.Formatter(
+    # Formatter colorido para console
+    console_formatter = ColoredFormatter(
         '%(asctime)s - %(name)s - %(levelname)s - %(message)s',
         datefmt='%Y-%m-%d %H:%M:%S'
     )

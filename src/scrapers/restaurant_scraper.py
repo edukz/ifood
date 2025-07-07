@@ -15,7 +15,7 @@ except ImportError:
 from src.scrapers.ifood_scraper import IfoodScraper
 from src.models.restaurant import Restaurant
 from src.utils.helpers import ensure_directories
-from src.utils.database import DatabaseManager
+from src.database.database_adapter import get_database_manager
 from src.utils.error_handler import (
     safe_click, safe_fill, validate_page_loaded, 
     with_retry, NavigationError, ElementNotFoundError, DataExtractionError
@@ -67,7 +67,7 @@ class RestaurantScraper(IfoodScraper):
             'article',
             'li'
         ]
-        self.db = DatabaseManager()
+        self.db = get_database_manager()
         self.current_category = None
     
     def navigate_to_category(self, category_url: str, category_name: str):

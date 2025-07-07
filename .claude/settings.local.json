@@ -1,0 +1,33 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(mkdir:*)",
+      "Bash(rm:*)",
+      "Bash(tree:*)",
+      "Bash(grep:*)",
+      "Bash(rg:*)",
+      "Bash(python:*)",
+      "Bash(pip3 install:*)",
+      "Bash(~/.local/bin/playwright:*)",
+      "Bash(sudo apt-get:*)",
+      "Bash(sudo apt-get install:*)",
+      "Bash(playwright install-deps:*)",
+      "Bash(mv:*)",
+      "Bash(ls:*)",
+      "Bash(true)",
+      "Bash(touch:*)",
+      "Bash(sudo python3:*)",
+      "Bash(chmod:*)",
+      "Bash(find:*)",
+      "Bash(sudo playwright:*)",
+      "Bash(sqlite3:*)",
+      "Bash(diff:*)",
+      "Bash(mysql:*)",
+      "Bash(echo:*)",
+      "Bash(source:*)",
+      "Bash(./venv/bin/python:*)",
+      "Bash(./venv/bin/pip install:*)"
+    ],
+    "deny": []
+  }
+}

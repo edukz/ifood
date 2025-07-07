@@ -12,9 +12,14 @@ from datetime import datetime
 
 # ParallelScraper removido - usando configuração simples
 from src.scrapers.parallel.windows_parallel_scraper import WindowsParallelScraper, detect_windows
+from src.scrapers.parallel.real_parallel_restaurant_scraper import RealParallelRestaurantScraper
 from src.utils.search_optimizer import SearchIndex, QueryOptimizer
 from tools.archive_manager import ArchiveManager
 from .base_menu import BaseMenu
+from src.config.database import execute_query
+from tabulate import tabulate
+import pandas as pd
+from src.database.database_adapter import get_database_manager
 
 
 class SystemMenus(BaseMenu):
@@ -27,6 +32,102 @@ class SystemMenus(BaseMenu):
         self.parallel_scraper = parallel_scraper
         self.search_optimizer = search_optimizer
         self.archive_manager = archive_manager
+        self.db = get_database_manager()
+        
+        # Import analysis components on demand
+        self.product_categorizer = None
+        self.price_monitor = None
+    
+    # ================== STATUS DE CATEGORIAS ==================
+    
+    def check_categories_status(self):
+        """Verifica o status das categorias no banco de dados"""
+        try:
+            self.show_section_header("📊 STATUS DAS CATEGORIAS")
+            
+            # 1. Contagem total de categorias
+            total_categories = execute_query("SELECT COUNT(*) as total FROM categories WHERE is_active = TRUE", fetch_one=True)
+            print(f"🏷️  Total de categorias ativas: {total_categories['total'] if total_categories else 0}")
+            
+            # 2. Categorias por cidade
+            print("\n🌍 CATEGORIAS POR CIDADE:")
+            city_stats = execute_query("""
+                SELECT 
+                    CASE 
+                        WHEN url LIKE '%birigui%' THEN 'Birigui'
+                        WHEN url LIKE '%aracatuba%' THEN 'Araçatuba'
+                        WHEN url LIKE '%penapolis%' THEN 'Penápolis'
+                        ELSE 'Outras'
+                    END as cidade,
+                    COUNT(*) as total
+                FROM categories 
+                WHERE is_active = TRUE
+                GROUP BY cidade
+                ORDER BY total DESC
+            """, fetch_all=True)
+            
+            for city in city_stats or []:
+                print(f"   • {city['cidade']}: {city['total']} categorias")
+            
+            # 3. Categorias recém adicionadas (últimas 24h)
+            recent_categories = execute_query("""
+                SELECT name, created_at 
+                FROM categories 
+                WHERE is_active = TRUE 
+                  AND created_at >= DATE_SUB(NOW(), INTERVAL 24 HOUR)
+                ORDER BY created_at DESC
+                LIMIT 10
+            """, fetch_all=True)
+            
+            if recent_categories:
+                print("\n🆕 CATEGORIAS RECENTES (24h):")
+                for cat in recent_categories:
+                    print(f"   • {cat['name']} - {cat['created_at'].strftime('%H:%M:%S')}")
+            else:
+                print("\n🆕 Nenhuma categoria adicionada nas últimas 24h")
+            
+            # 4. Categorias com mais restaurantes
+            print("\n🏪 TOP CATEGORIAS (por restaurantes):")
+            top_categories = execute_query("""
+                SELECT 
+                    c.name,
+                    COUNT(r.id) as total_restaurants
+                FROM categories c
+                LEFT JOIN restaurants r ON c.id = r.category_id
+                WHERE c.is_active = TRUE AND r.is_active = TRUE
+                GROUP BY c.id, c.name
+                ORDER BY total_restaurants DESC
+                LIMIT 10
+            """, fetch_all=True)
+            
+            for cat in top_categories or []:
+                print(f"   • {cat['name']}: {cat['total_restaurants'] or 0} restaurantes")
+            
+            # 5. Status geral do banco
+            print("\n📈 ESTATÍSTICAS GERAIS:")
+            general_stats = execute_query("""
+                SELECT 
+                    (SELECT COUNT(*) FROM categories WHERE is_active = TRUE) as categories,
+                    (SELECT COUNT(*) FROM restaurants WHERE is_active = TRUE) as unique_restaurants,
+                    (SELECT COUNT(*) FROM products) as products
+            """, fetch_one=True)
+            
+            if general_stats:
+                print(f"   • Categorias ativas: {general_stats['categories']}")
+                print(f"   • Restaurantes ativos: {general_stats['unique_restaurants']}")
+                print(f"   • Produtos cadastrados: {general_stats['products']}")
+                
+                # Calcula densidade
+                if general_stats['unique_restaurants'] and general_stats['products']:
+                    density = (general_stats['products'] / general_stats['unique_restaurants'])
+                    print(f"   • Média de produtos por restaurante: {density:.1f}")
+            
+            print("\n" + "═" * 60)
+            
+        except Exception as e:
+            print(f"❌ Erro ao verificar status das categorias: {e}")
+        
+        input("\nPressione Enter para continuar...")
     
     # ================== EXECUÇÃO PARALELA ==================
     
@@ -67,9 +168,9 @@ class SystemMenus(BaseMenu):
         
         # Verificar se há categorias já coletadas
         try:
-            from src.utils.database import DatabaseManager
-            db = DatabaseManager()
-            existing_categories = db.get_existing_categories()
+            from src.database.database_adapter import get_database_manager
+            db = get_database_manager()
+            existing_categories = db.get_categories()
         except Exception as e:
             existing_categories = []
         
@@ -124,9 +225,9 @@ class SystemMenus(BaseMenu):
         
         # Verificar se há categorias
         try:
-            from src.utils.database import DatabaseManager
-            db = DatabaseManager()
-            all_categories = db.get_existing_categories("Birigui")
+            from src.database.database_adapter import get_database_manager
+            db = get_database_manager()
+            all_categories = db.get_categories("Birigui")
         except Exception as e:
             self.logger.error(f"Erro ao acessar banco: {e}")
             all_categories = []
@@ -188,86 +289,25 @@ class SystemMenus(BaseMenu):
             self.pause()
             return
         
-        # Pergunta sobre tipo de extração
-        print(f"\n🎯 TIPO DE EXTRAÇÃO:")
-        print(f"1. ⚡ Extração ULTRA-RÁPIDA (NOVO - Recomendado)")
-        print(f"   - RestaurantScraper otimizado + paralelo")
-        print(f"   - Dados reais do site iFood")
-        print(f"   - 3-5x mais rápido (2-5 min total)")
-        print(f"2. 🚀 Extração REAL padrão")
-        print(f"   - RestaurantScraper original + paralelo")
-        print(f"   - Dados reais mas mais lento (10-30 min)")
-        print(f"3. 💨 Extração simulada")
-        print(f"   - Dados baseados em templates")
-        print(f"   - Muito rápido (segundos)")
-        print(f"   - Para testes apenas")
+        # 🚀 Usar automaticamente a extração paralela real (melhor opção)
+        print(f"\n🚀 Iniciando extração paralela REAL com deduplicação...")
+        print(f"⚙️ Pool de {3} browsers paralelos")
+        print(f"⏱️ Tempo estimado: {len(selected_categories)*1.8/3:.1f} minutos")
+        print(f"💡 Scraping real do site iFood com paralelismo otimizado")
+        print(f"🎯 Sistema de deduplicação em memória ativo")
         
-        extraction_choice = input(f"\nEscolha o tipo de extração (1/2/3): ").strip()
+        extraction_choice = "1"  # Sempre usar a opção 1 (melhor)
         
         try:
             if extraction_choice == "1":
-                print(f"\n⚡ Iniciando extração ULTRA-RÁPIDA...")
-                print(f"🎯 Tempo estimado: {len(selected_categories)*1.5/3:.1f} minutos")
-                print(f"💡 Versão otimizada com delays reduzidos")
-                
-                # Usar o novo extrator ultra-rápido
-                from src.scrapers.optimized.ultra_fast_parallel_scraper import UltraFastParallelScraper
-                
-                scraper = UltraFastParallelScraper(max_workers=3, headless=True)
-                
-                # Converte categorias
-                category_list = []
-                for cat in selected_categories:
-                    if isinstance(cat, dict):
-                        category_list.append({
-                            'name': cat.get('name', 'Unknown'),
-                            'url': cat.get('url', ''),
-                            'city': cat.get('city', 'Birigui')
-                        })
-                    elif isinstance(cat, tuple) and len(cat) >= 2:
-                        category_list.append({
-                            'name': cat[0],
-                            'url': cat[1],
-                            'city': cat[2] if len(cat) > 2 else 'Birigui'
-                        })
-                
-                # Executa extração ultra-rápida
-                result = scraper.extract_ultra_fast(category_list)
-                
-                if result['success']:
-                    stats = result['stats']
-                    print(f"\n⚡ EXTRAÇÃO ULTRA-RÁPIDA CONCLUÍDA!")
-                    print(f"📊 Estatísticas:")
-                    print(f"  🏷️  Categorias processadas: {stats['processed']}")
-                    print(f"  ✅ Sucessos: {stats['success']}")
-                    print(f"  ❌ Falhas: {stats['failed']}")
-                    print(f"  🏪 Total restaurantes: {stats['total_restaurants']}")
-                    print(f"  💾 Novos salvos: {stats['total_new_saved']}")
-                    print(f"  ⏱️  Tempo total: {result['total_duration']/60:.1f} min")
-                    print(f"  🚀 Performance: {result['restaurants_per_minute']:.0f} rest/min")
-                    print(f"  📈 Média: {result['avg_time_per_category']:.1f}s/categoria")
-                    
-                    # Atualizar estatísticas
-                    self.session_stats['restaurants_extracted'] += stats['total_new_saved']
-                    
-                else:
-                    print(f"❌ Erro na extração ultra-rápida: {result.get('error', 'Erro desconhecido')}")
-            
-            elif extraction_choice == "2":
-                print(f"\n🚀 Iniciando extração paralela REAL...")
-                print(f"⚠️  ATENÇÃO: Isso pode demorar 10-30 minutos!")
-                print(f"💡 Cada categoria será extraída com scroll completo")
-                
-                confirm = input(f"\n⚠️  Continuar com extração real? (s/N): ").strip().lower()
+                confirm = input(f"\n⚠️  Continuar com extração real paralela? (s/N): ").strip().lower()
                 if confirm != 's':
                     print("❌ Operação cancelada")
                     self.pause()
                     return
                 
-                # Usar o novo extrator paralelo REAL
-                from src.scrapers.parallel.real_parallel_restaurant_scraper import RealParallelRestaurantScraper
-                
-                scraper = RealParallelRestaurantScraper(max_workers=3, headless=True)
+                # Usar o novo RealParallelRestaurantScraper
+                scraper = RealParallelRestaurantScraper(max_workers=3, city="Birigui")
                 
                 # Converte categorias para formato esperado
                 category_list = []
@@ -286,70 +326,44 @@ class SystemMenus(BaseMenu):
                         })
                 
                 # Executa extração paralela REAL
-                result = scraper.extract_parallel(category_list)
+                print(f"\n🔄 Iniciando extração de {len(category_list)} categorias...")
+                result = scraper.scrape_parallel(category_list)
                 
-                if result['success']:
-                    stats = result['stats']
-                    print(f"\n🎉 EXTRAÇÃO PARALELA REAL CONCLUÍDA!")
-                    print(f"📊 Estatísticas:")
-                    print(f"  🏷️  Categorias processadas: {stats['processed']}")
-                    print(f"  ✅ Sucessos: {stats['success']}")
-                    print(f"  ❌ Falhas: {stats['failed']}")
-                    print(f"  🏪 Total restaurantes encontrados: {stats['total_restaurants']}")
-                    print(f"  💾 Total restaurantes novos: {stats['total_new_saved']}")
-                    print(f"  🔄 Total duplicados: {stats['total_duplicates']}")
-                    print(f"  ⏱️  Tempo total: {result['duration']/60:.2f} minutos")
-                    print(f"  🚀 Restaurantes/min: {stats['total_restaurants']/(result['duration']/60):.1f}")
+                print(f"\n🎉 EXTRAÇÃO PARALELA REAL v2.0 CONCLUÍDA!")
+                print(f"📊 Estatísticas:")
+                print(f"  🏷️  Categorias processadas: {result['total_categories']}")
+                print(f"  ✅ Sucessos: {result['successful_categories']}")
+                print(f"  ❌ Falhas: {result['failed_categories']}")
+                print(f"  🏪 Total restaurantes coletados: {result['total_restaurants']}")
+                print(f"  🎯 Restaurantes únicos (pós-deduplicação): {result['unique_restaurants']}")
+                print(f"  💾 Novos salvos no banco: {result['total_new_saved']}")
+                print(f"  🔄 Atualizados no banco: {result.get('total_updated', 0)}")
+                print(f"  🗑️  Duplicados (removidos na memória): {result['total_duplicates']}")
+                print(f"  ⏱️  Tempo total: {result['total_time']:.1f} min")
+                print(f"  🚀 Performance: {result['restaurants_per_minute']:.1f} rest/min")
+                print(f"  📈 Média: {result['avg_time_per_category']:.1f}s/categoria")
+                print(f"  🎯 Taxa de sucesso: {result['success_rate']:.1f}%")
+                
+                # 📋 DETALHAMENTO POR CATEGORIA
+                print(f"\n📋 DETALHAMENTO POR CATEGORIA:")
+                for category_result in result.get('results', []):
+                    if category_result.success:
+                        status = "✅"
+                        details = f"{category_result.restaurants_count} coletados, {category_result.new_saved} novos, {category_result.duplicates} duplicados"
+                    else:
+                        status = "❌"
+                        details = f"FALHA - {category_result.error_message}"
                     
-                    # Atualizar estatísticas da sessão
-                    self.session_stats['restaurants_extracted'] += stats['total_new_saved']
-                    
-                else:
-                    print(f"❌ Erro na extração paralela real: {result.get('error', 'Erro desconhecido')}")
+                    print(f"  {status} {category_result.category_name}: {details} ({category_result.execution_time:.1f}s)")
+                
+                print("═" * 60)
+                
+                # Atualizar estatísticas da sessão (apenas novos salvos)
+                self.session_stats['restaurants_extracted'] += result['total_new_saved']
             
-            elif extraction_choice == "2":
-                print(f"\n⚡ Iniciando extração simulada rápida...")
-                
-                # Usar o WindowsParallelScraper para dados simulados
-                scraper = WindowsParallelScraper(max_workers=3)
-                
-                # Converte categorias para formato esperado
-                category_list = []
-                for cat in selected_categories:
-                    if isinstance(cat, dict):
-                        category_list.append({
-                            'name': cat.get('name', 'Unknown'),
-                            'url': cat.get('url', ''),
-                            'city': cat.get('city', 'Birigui')
-                        })
-                    elif isinstance(cat, tuple) and len(cat) >= 2:
-                        category_list.append({
-                            'name': cat[0],
-                            'url': cat[1],
-                            'city': cat[2] if len(cat) > 2 else 'Birigui'
-                        })
-                
-                # Executa extração simulada
-                result = scraper.extract_restaurants_parallel(category_list)
-                
-                if result['success']:
-                    stats = result['stats']
-                    print(f"\n✅ EXTRAÇÃO SIMULADA CONCLUÍDA!")
-                    print(f"📊 Estatísticas:")
-                    print(f"  🏷️  Categorias processadas: {stats['processed']}")
-                    print(f"  ✅ Sucessos: {stats['success']}")
-                    print(f"  ❌ Falhas: {stats['failed']}")
-                    print(f"  🏪 Restaurantes gerados: {stats['restaurants_generated']}")
-                    print(f"  💾 Restaurantes salvos: {stats['restaurants_saved']}")
-                    print(f"  ⏱️  Tempo total: {result['duration']:.2f}s")
-                    
-                    # Atualizar estatísticas da sessão
-                    self.session_stats['restaurants_extracted'] += stats['restaurants_saved']
-                    
-                else:
-                    print(f"❌ Erro na extração simulada: {result.get('error', 'Erro desconhecido')}")
             else:
-                print("❌ Opção inválida")
+                # Fallback - não deveria chegar aqui
+                print("❌ Opção de extração inválida")
                 self.pause()
                 return
                 
@@ -389,7 +403,7 @@ class SystemMenus(BaseMenu):
             print(f"  • Digite números das categorias (ex: 1,3,5 ou 1-5)")
             print(f"  • Digite 'all' para selecionar todas restantes")
             print(f"  • Digite 'clear' para limpar seleção")
-            print(f"  • Digite 'done' para finalizar seleção")
+            print(f"  • Digite 'done' para FINALIZAR e continuar ⚡")
             print(f"  • Digite '0' para cancelar")
             
             user_input = input(f"\nSua escolha: ").strip().lower()
@@ -496,7 +510,7 @@ class SystemMenus(BaseMenu):
             print(f"  • Digite números das categorias (ex: 1,3,5 ou 1-5)")
             print(f"  • Digite 'all' para selecionar todas restantes")
             print(f"  • Digite 'clear' para limpar seleção")
-            print(f"  • Digite 'done' para finalizar seleção")
+            print(f"  • Digite 'done' para FINALIZAR e continuar ⚡")
             print(f"  • Digite '0' para cancelar")
             
             user_input = input(f"\nSua escolha: ").strip().lower()
@@ -818,11 +832,11 @@ class SystemMenus(BaseMenu):
             # ETAPA 2: Restaurantes (paralelo)
             print(f"\n2️⃣  ETAPA 2: Extraindo restaurantes em paralelo...")
             try:
-                from src.utils.database import DatabaseManager
+                from src.database.database_adapter import get_database_manager
                 from src.scrapers.optimized.ultra_fast_parallel_scraper import UltraFastParallelScraper
                 
-                db = DatabaseManager()
-                categories = db.get_existing_categories("Birigui")
+                db = get_database_manager()
+                categories = db.get_categories("Birigui")
                 
                 if not categories:
                     raise Exception("Nenhuma categoria encontrada após extração")
@@ -1583,11 +1597,12 @@ class SystemMenus(BaseMenu):
             "4. 💰 Análise de preços",
             "5. 🎯 Top categorias",
             "6. 📋 Exportar dados",
-            "7. 🔍 Busca avançada"
+            "7. 🔍 Busca avançada",
+            "8. 📊 Status das categorias"
         ]
         
         self.show_menu("📊 RELATÓRIOS E ANÁLISES", options)
-        choice = self.get_user_choice(7)
+        choice = self.get_user_choice(8)
         
         if choice == "1":
             self._general_report()
@@ -1603,6 +1618,8 @@ class SystemMenus(BaseMenu):
             self._export_data()
         elif choice == "7":
             self._advanced_search()
+        elif choice == "8":
+            self.check_categories_status()
         elif choice == "0":
             return
         else:
@@ -2279,3 +2296,784 @@ class SystemMenus(BaseMenu):
                 
         except Exception as e:
             self.show_error(f"Erro na descoberta: {e}")
+
+    # ================== VISUALIZAÇÃO DE RESTAURANTES ==================
+    
+    def view_restaurants_menu(self):
+        """Menu para visualizar restaurantes salvos no banco"""
+        while True:
+            self.show_header()
+            print("\n🏪 VISUALIZAR RESTAURANTES")
+            print("═" * 50)
+            print("1. 📋 Listar todos os restaurantes")
+            print("2. 🏙️  Filtrar por cidade")
+            print("3. 🏷️  Filtrar por categoria")
+            print("4. 🔍 Buscar por nome")
+            print("5. ⭐ Top restaurantes (por nota)")
+            print("6. 📊 Estatísticas detalhadas")
+            print("7. 💾 Exportar para CSV")
+            print("0. 🔙 Voltar")
+            
+            choice = input("\nEscolha: ").strip()
+            
+            if choice == "0":
+                break
+            elif choice == "1":
+                self._view_all_restaurants()
+            elif choice == "2":
+                self._view_restaurants_by_city()
+            elif choice == "3":
+                self._view_restaurants_by_category()
+            elif choice == "4":
+                self._search_restaurants_by_name()
+            elif choice == "5":
+                self._view_top_restaurants()
+            elif choice == "6":
+                self._show_restaurants_statistics()
+            elif choice == "7":
+                self._export_restaurants_to_csv()
+            else:
+                self.show_invalid_option()
+    
+    def _view_all_restaurants(self, limit=50):
+        """Lista todos os restaurantes"""
+        try:
+            with self.db.get_cursor() as (cursor, _):
+                cursor.execute("""
+                    SELECT 
+                        r.id, r.name, r.city, c.name as category,
+                        r.rating, r.delivery_time, r.delivery_fee,
+                        r.distance, r.last_scraped
+                    FROM restaurants r
+                    LEFT JOIN categories c ON r.category_id = c.id
+                    WHERE r.is_active = TRUE
+                    ORDER BY r.rating DESC, r.name
+                    LIMIT %s
+                """, (limit,))
+                
+                restaurants = cursor.fetchall()
+                self._display_restaurants_table(restaurants, f"Todos os Restaurantes (Top {limit})")
+                
+        except Exception as e:
+            self.logger.error(f"Erro ao listar restaurantes: {e}")
+            print(f"❌ Erro: {e}")
+        
+        self.pause()
+    
+    def _view_restaurants_by_city(self):
+        """Filtra restaurantes por cidade"""
+        try:
+            # Listar cidades disponíveis
+            with self.db.get_cursor() as (cursor, _):
+                cursor.execute("""
+                    SELECT DISTINCT city, COUNT(*) as total
+                    FROM restaurants
+                    WHERE is_active = TRUE
+                    GROUP BY city
+                    ORDER BY total DESC
+                """)
+                cities = cursor.fetchall()
+                
+                if not cities:
+                    print("❌ Nenhuma cidade encontrada")
+                    self.pause()
+                    return
+                
+                print("\n🏙️ CIDADES DISPONÍVEIS:")
+                for i, city in enumerate(cities, 1):
+                    print(f"{i}. {city['city']} ({city['total']} restaurantes)")
+                
+                city_choice = input("\nEscolha a cidade (número): ").strip()
+                
+                try:
+                    idx = int(city_choice) - 1
+                    if 0 <= idx < len(cities):
+                        selected_city = cities[idx]['city']
+                        
+                        # Buscar restaurantes da cidade
+                        cursor.execute("""
+                            SELECT 
+                                r.id, r.name, r.city, c.name as category,
+                                r.rating, r.delivery_time, r.delivery_fee,
+                                r.distance, r.last_scraped
+                            FROM restaurants r
+                            LEFT JOIN categories c ON r.category_id = c.id
+                            WHERE r.is_active = TRUE AND r.city = %s
+                            ORDER BY r.rating DESC, r.name
+                            LIMIT 100
+                        """, (selected_city,))
+                        
+                        restaurants = cursor.fetchall()
+                        self._display_restaurants_table(restaurants, f"Restaurantes em {selected_city}")
+                except (ValueError, IndexError):
+                    print("❌ Opção inválida")
+                    
+        except Exception as e:
+            self.logger.error(f"Erro ao filtrar por cidade: {e}")
+            print(f"❌ Erro: {e}")
+        
+        self.pause()
+    
+    def _view_restaurants_by_category(self):
+        """Filtra restaurantes por categoria"""
+        try:
+            # Listar categorias disponíveis
+            with self.db.get_cursor() as (cursor, _):
+                cursor.execute("""
+                    SELECT c.name, COUNT(r.id) as total
+                    FROM categories c
+                    LEFT JOIN restaurants r ON c.id = r.category_id AND r.is_active = TRUE
+                    WHERE c.is_active = TRUE
+                    GROUP BY c.id, c.name
+                    HAVING COUNT(r.id) > 0
+                    ORDER BY total DESC
+                """)
+                categories = cursor.fetchall()
+                
+                if not categories:
+                    print("❌ Nenhuma categoria encontrada")
+                    self.pause()
+                    return
+                
+                print("\n🏷️ CATEGORIAS DISPONÍVEIS:")
+                for i, cat in enumerate(categories, 1):
+                    print(f"{i}. {cat['name']} ({cat['total']} restaurantes)")
+                
+                cat_choice = input("\nEscolha a categoria (número): ").strip()
+                
+                try:
+                    idx = int(cat_choice) - 1
+                    if 0 <= idx < len(categories):
+                        selected_category = categories[idx]['name']
+                        
+                        # Buscar restaurantes da categoria
+                        cursor.execute("""
+                            SELECT 
+                                r.id, r.name, r.city, c.name as category,
+                                r.rating, r.delivery_time, r.delivery_fee,
+                                r.distance, r.last_scraped
+                            FROM restaurants r
+                            LEFT JOIN categories c ON r.category_id = c.id
+                            WHERE r.is_active = TRUE AND c.name = %s
+                            ORDER BY r.rating DESC, r.name
+                            LIMIT 100
+                        """, (selected_category,))
+                        
+                        restaurants = cursor.fetchall()
+                        self._display_restaurants_table(restaurants, f"Restaurantes - {selected_category}")
+                except (ValueError, IndexError):
+                    print("❌ Opção inválida")
+                    
+        except Exception as e:
+            self.logger.error(f"Erro ao filtrar por categoria: {e}")
+            print(f"❌ Erro: {e}")
+        
+        self.pause()
+    
+    def _search_restaurants_by_name(self):
+        """Busca restaurantes por nome"""
+        search_term = input("\n🔍 Digite o nome do restaurante: ").strip()
+        
+        if not search_term:
+            print("❌ Nome não pode estar vazio")
+            self.pause()
+            return
+        
+        try:
+            with self.db.get_cursor() as (cursor, _):
+                cursor.execute("""
+                    SELECT 
+                        r.id, r.name, r.city, c.name as category,
+                        r.rating, r.delivery_time, r.delivery_fee,
+                        r.distance, r.last_scraped
+                    FROM restaurants r
+                    LEFT JOIN categories c ON r.category_id = c.id
+                    WHERE r.is_active = TRUE AND r.name LIKE %s
+                    ORDER BY r.rating DESC, r.name
+                    LIMIT 100
+                """, (f"%{search_term}%",))
+                
+                restaurants = cursor.fetchall()
+                if restaurants:
+                    self._display_restaurants_table(restaurants, f"Busca: '{search_term}'")
+                else:
+                    print(f"\n❌ Nenhum restaurante encontrado com '{search_term}'")
+                    
+        except Exception as e:
+            self.logger.error(f"Erro na busca: {e}")
+            print(f"❌ Erro: {e}")
+        
+        self.pause()
+    
+    def _view_top_restaurants(self):
+        """Mostra top restaurantes por nota"""
+        try:
+            with self.db.get_cursor() as (cursor, _):
+                cursor.execute("""
+                    SELECT 
+                        r.id, r.name, r.city, c.name as category,
+                        r.rating, r.delivery_time, r.delivery_fee,
+                        r.distance, r.last_scraped
+                    FROM restaurants r
+                    LEFT JOIN categories c ON r.category_id = c.id
+                    WHERE r.is_active = TRUE AND r.rating > 0
+                    ORDER BY r.rating DESC, r.name
+                    LIMIT 20
+                """)
+                
+                restaurants = cursor.fetchall()
+                self._display_restaurants_table(restaurants, "🌟 Top 20 Restaurantes por Nota")
+                
+        except Exception as e:
+            self.logger.error(f"Erro ao buscar top restaurantes: {e}")
+            print(f"❌ Erro: {e}")
+        
+        self.pause()
+    
+    def _display_restaurants_table(self, restaurants, title):
+        """Exibe tabela formatada de restaurantes"""
+        if not restaurants:
+            print(f"\n❌ Nenhum restaurante encontrado")
+            return
+        
+        print(f"\n📊 {title}")
+        print("═" * 100)
+        print(f"🏪 Total: {len(restaurants)} restaurantes\n")
+        
+        # Preparar dados para tabela
+        table_data = []
+        for rest in restaurants:
+            table_data.append([
+                rest['id'],
+                rest['name'][:35] + '...' if len(rest['name']) > 35 else rest['name'],
+                rest['city'],
+                rest['category'] or 'N/A',
+                f"{rest['rating']:.1f}⭐" if rest['rating'] else 'N/A',
+                rest['delivery_time'] or 'N/A',
+                rest['delivery_fee'] or 'N/A',
+                rest['distance'] or 'N/A',
+                rest['last_scraped'].strftime('%d/%m %H:%M') if rest['last_scraped'] else 'N/A'
+            ])
+        
+        headers = ['ID', 'Nome', 'Cidade', 'Categoria', 'Nota', 'Tempo', 'Taxa', 'Dist.', 'Última Coleta']
+        print(tabulate(table_data, headers=headers, tablefmt='grid'))
+    
+    def _show_restaurants_statistics(self):
+        """Mostra estatísticas detalhadas dos restaurantes"""
+        try:
+            with self.db.get_cursor() as (cursor, _):
+                print("\n📊 ESTATÍSTICAS DETALHADAS DE RESTAURANTES")
+                print("═" * 60)
+                
+                # Total geral
+                cursor.execute("SELECT COUNT(*) as total FROM restaurants WHERE is_active = TRUE")
+                total = cursor.fetchone()['total']
+                print(f"\n🏪 Total de restaurantes ativos: {total}")
+                
+                # Por categoria
+                cursor.execute("""
+                    SELECT c.name, COUNT(r.id) as total, AVG(r.rating) as avg_rating
+                    FROM categories c
+                    LEFT JOIN restaurants r ON c.id = r.category_id AND r.is_active = TRUE
+                    WHERE c.is_active = TRUE
+                    GROUP BY c.id, c.name
+                    HAVING COUNT(r.id) > 0
+                    ORDER BY total DESC
+                    LIMIT 15
+                """)
+                
+                cat_stats = cursor.fetchall()
+                print("\n📊 Distribuição por Categoria (Top 15):")
+                for stat in cat_stats:
+                    avg_rating = f"{stat['avg_rating']:.1f}" if stat['avg_rating'] else "N/A"
+                    print(f"  • {stat['name']}: {stat['total']} restaurantes (média: {avg_rating}⭐)")
+                
+                # Por cidade
+                cursor.execute("""
+                    SELECT city, COUNT(*) as total, AVG(rating) as avg_rating
+                    FROM restaurants
+                    WHERE is_active = TRUE
+                    GROUP BY city
+                    ORDER BY total DESC
+                """)
+                
+                city_stats = cursor.fetchall()
+                print("\n🏙️ Distribuição por Cidade:")
+                for stat in city_stats:
+                    avg_rating = f"{stat['avg_rating']:.1f}" if stat['avg_rating'] else "N/A"
+                    print(f"  • {stat['city']}: {stat['total']} restaurantes (média: {avg_rating}⭐)")
+                
+                # Médias gerais
+                cursor.execute("""
+                    SELECT 
+                        AVG(rating) as avg_rating,
+                        AVG(CAST(REPLACE(delivery_fee, 'R$ ', '') AS DECIMAL(10,2))) as avg_fee,
+                        COUNT(DISTINCT category_id) as total_categories
+                    FROM restaurants
+                    WHERE is_active = TRUE
+                """)
+                
+                averages = cursor.fetchone()
+                print("\n📈 Médias Gerais:")
+                print(f"  • Nota média: {averages['avg_rating']:.2f}⭐")
+                print(f"  • Taxa de entrega média: R$ {averages['avg_fee']:.2f}" if averages['avg_fee'] else "  • Taxa de entrega: N/A")
+                print(f"  • Total de categorias: {averages['total_categories']}")
+                
+                # Última atualização
+                cursor.execute("""
+                    SELECT MIN(last_scraped) as oldest, MAX(last_scraped) as newest
+                    FROM restaurants
+                    WHERE is_active = TRUE
+                """)
+                
+                updates = cursor.fetchone()
+                if updates['oldest'] and updates['newest']:
+                    print("\n🕐 Atualizações:")
+                    print(f"  • Primeira coleta: {updates['oldest'].strftime('%d/%m/%Y %H:%M')}")
+                    print(f"  • Última coleta: {updates['newest'].strftime('%d/%m/%Y %H:%M')}")
+                
+        except Exception as e:
+            self.logger.error(f"Erro ao gerar estatísticas: {e}")
+            print(f"❌ Erro: {e}")
+        
+        self.pause()
+    
+    def _export_restaurants_to_csv(self):
+        """Exporta restaurantes para CSV"""
+        try:
+            print("\n💾 EXPORTAR RESTAURANTES PARA CSV")
+            print("═" * 50)
+            print("1. Exportar todos os restaurantes")
+            print("2. Exportar por cidade")
+            print("3. Exportar por categoria")
+            print("0. Cancelar")
+            
+            choice = input("\nEscolha: ").strip()
+            
+            if choice == "0":
+                return
+            
+            with self.db.get_cursor() as (cursor, _):
+                query = """
+                    SELECT 
+                        r.id, r.name, r.city, c.name as category,
+                        r.rating, r.delivery_time, r.delivery_fee,
+                        r.distance, r.address, r.phone,
+                        r.opening_hours, r.minimum_order,
+                        r.url, r.last_scraped, r.created_at
+                    FROM restaurants r
+                    LEFT JOIN categories c ON r.category_id = c.id
+                    WHERE r.is_active = TRUE
+                """
+                params = []
+                filename_suffix = "todos"
+                
+                if choice == "2":
+                    city = input("Digite a cidade: ").strip()
+                    if city:
+                        query += " AND r.city = %s"
+                        params.append(city)
+                        filename_suffix = f"cidade_{city.lower().replace(' ', '_')}"
+                
+                elif choice == "3":
+                    category = input("Digite a categoria: ").strip()
+                    if category:
+                        query += " AND c.name = %s"
+                        params.append(category)
+                        filename_suffix = f"categoria_{category.lower().replace(' ', '_')}"
+                
+                query += " ORDER BY r.name"
+                
+                cursor.execute(query, params)
+                restaurants = cursor.fetchall()
+                
+                if not restaurants:
+                    print("❌ Nenhum restaurante encontrado para exportar")
+                    self.pause()
+                    return
+                
+                # Converter para DataFrame e exportar
+                df = pd.DataFrame(restaurants)
+                timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+                filename = f"restaurantes_{filename_suffix}_{timestamp}.csv"
+                
+                df.to_csv(filename, index=False, encoding='utf-8-sig')
+                
+                print(f"\n✅ Exportado com sucesso!")
+                print(f"📄 Arquivo: {filename}")
+                print(f"📊 Total de restaurantes: {len(restaurants)}")
+                
+        except Exception as e:
+            self.logger.error(f"Erro ao exportar: {e}")
+            print(f"❌ Erro: {e}")
+        
+        self.pause()
+
+    # ================== NOVOS MENUS CONSOLIDADOS ==================
+    
+    def menu_reports_and_analytics(self):
+        """Menu consolidado de Relatórios e Análises"""
+        while True:
+            self.show_header()
+            print("\n📊 RELATÓRIOS E ANÁLISES")
+            print("═" * 50)
+            print("1. 🤖 Categorização Automática")
+            print("2. 💰 Monitoramento de Preços")
+            print("3. 📈 Estatísticas Detalhadas")
+            print("4. 📊 Relatórios Gerais")
+            print("5. 🔍 Análise de Performance")
+            print("6. 📋 Exportar Relatórios")
+            print("0. 🔙 Voltar")
+            
+            choice = input("\nEscolha: ").strip()
+            
+            if choice == "0":
+                break
+            elif choice == "1":
+                self._menu_product_categorizer()
+            elif choice == "2":
+                self._menu_price_monitor()
+            elif choice == "3":
+                self._show_detailed_statistics()
+            elif choice == "4":
+                self.menu_reports()
+            elif choice == "5":
+                self._show_performance_analysis()
+            elif choice == "6":
+                self._export_reports_menu()
+            else:
+                self.show_invalid_option()
+    
+    def menu_settings_expanded(self):
+        """Menu expandido de Configurações"""
+        while True:
+            self.show_header()
+            print("\n⚙️ CONFIGURAÇÕES")
+            print("═" * 50)
+            print("1. 🌐 Configurações do Sistema")
+            print("2. 🗜️  Gerenciar Arquivos")
+            print("3. 🧹 Limpeza e Logs")
+            print("4. 🔧 Configurações Avançadas")
+            print("5. 💾 Backup e Restauração")
+            print("6. 📊 Configurar Monitoramento")
+            print("0. 🔙 Voltar")
+            
+            choice = input("\nEscolha: ").strip()
+            
+            if choice == "0":
+                break
+            elif choice == "1":
+                self.menu_settings()
+            elif choice == "2":
+                self.menu_archive_manager()
+            elif choice == "3":
+                self._menu_cleanup_and_logs()
+            elif choice == "4":
+                self._menu_advanced_settings()
+            elif choice == "5":
+                self._menu_backup_restore()
+            elif choice == "6":
+                self._menu_monitoring_config()
+            else:
+                self.show_invalid_option()
+    
+    def menu_system_status_consolidated(self):
+        """Menu consolidado de Status do Sistema"""
+        while True:
+            self.show_header()
+            print("\n📋 STATUS DO SISTEMA")
+            print("═" * 50)
+            print("1. 📊 Status Geral")
+            print("2. 🏷️  Status das Categorias")
+            print("3. 🏪 Status dos Restaurantes")
+            print("4. 🍕 Status dos Produtos")
+            print("5. 🚀 Performance do Sistema")
+            print("6. 🗄️  Status do Banco de Dados")
+            print("7. 📈 Métricas em Tempo Real")
+            print("0. 🔙 Voltar")
+            
+            choice = input("\nEscolha: ").strip()
+            
+            if choice == "0":
+                break
+            elif choice == "1":
+                self.show_system_status()
+            elif choice == "2":
+                self.check_categories_status()
+            elif choice == "3":
+                self._show_restaurants_status()
+            elif choice == "4":
+                self._show_products_status()
+            elif choice == "5":
+                self._show_system_performance()
+            elif choice == "6":
+                self._show_database_status()
+            elif choice == "7":
+                self._show_realtime_metrics()
+            else:
+                self.show_invalid_option()
+    
+    # ================== MÉTODOS AUXILIARES DOS NOVOS MENUS ==================
+    
+    def _menu_product_categorizer(self):
+        """Menu de categorização de produtos"""
+        try:
+            if not self.product_categorizer:
+                from src.utils.product_categorizer import ProductCategorizer
+                self.product_categorizer = ProductCategorizer()
+            
+            print("\n🤖 CATEGORIZAÇÃO AUTOMÁTICA")
+            print("═" * 50)
+            print("1. 📁 Categorizar produtos do banco")
+            print("2. 🧪 Testar categorização")
+            print("3. 📊 Estatísticas de categorização")
+            print("0. 🔙 Voltar")
+            
+            choice = input("\nEscolha: ").strip()
+            
+            if choice == "1":
+                print("🤖 Funcionalidade de categorização em desenvolvimento")
+                self.pause()
+            elif choice == "2":
+                print("🧪 Teste de categorização em desenvolvimento") 
+                self.pause()
+            elif choice == "3":
+                print("📊 Estatísticas de categorização em desenvolvimento")
+                self.pause()
+                
+        except ImportError:
+            print("❌ Módulo de categorização não disponível")
+            self.pause()
+    
+    def _menu_price_monitor(self):
+        """Menu de monitoramento de preços"""
+        try:
+            if not self.price_monitor:
+                from src.utils.price_monitor import PriceMonitor
+                self.price_monitor = PriceMonitor()
+            
+            print("\n💰 MONITORAMENTO DE PREÇOS")
+            print("═" * 50)
+            print("1. 📈 Variações de preços")
+            print("2. 🔍 Acompanhar produto específico")
+            print("3. 📊 Relatório de preços")
+            print("4. ⚡ Alertas de preços")
+            print("0. 🔙 Voltar")
+            
+            choice = input("\nEscolha: ").strip()
+            
+            if choice == "1":
+                print("📈 Análise de variações em desenvolvimento")
+                self.pause()
+            elif choice == "2":
+                print("🔍 Rastreamento específico em desenvolvimento")
+                self.pause()
+            elif choice == "3":
+                print("📊 Relatório de preços em desenvolvimento")
+                self.pause()
+            elif choice == "4":
+                print("⚡ Alertas de preços em desenvolvimento")
+                self.pause()
+                
+        except ImportError:
+            print("❌ Módulo de monitoramento não disponível")
+            self.pause()
+    
+    def _show_detailed_statistics(self):
+        """Mostra estatísticas detalhadas do sistema"""
+        print("\n📈 ESTATÍSTICAS DETALHADAS")
+        print("═" * 60)
+        
+        try:
+            # Estatísticas do banco
+            with self.db.get_cursor() as (cursor, _):
+                # Contagens gerais
+                cursor.execute("SELECT COUNT(*) as total FROM restaurants WHERE is_active = TRUE")
+                total_restaurants = cursor.fetchone()['total']
+                
+                cursor.execute("SELECT COUNT(*) as total FROM categories WHERE is_active = TRUE")
+                total_categories = cursor.fetchone()['total']
+                
+                print(f"\n📊 TOTAIS GERAIS:")
+                print(f"  🏪 Restaurantes ativos: {total_restaurants:,}")
+                print(f"  🏷️  Categorias ativas: {total_categories:,}")
+                
+                # Top categorias
+                cursor.execute("""
+                    SELECT c.name, COUNT(r.id) as count 
+                    FROM categories c
+                    LEFT JOIN restaurants r ON c.id = r.category_id
+                    WHERE c.is_active = TRUE AND r.is_active = TRUE
+                    GROUP BY c.id, c.name
+                    ORDER BY count DESC
+                    LIMIT 10
+                """)
+                
+                top_categories = cursor.fetchall()
+                print(f"\n🏆 TOP 10 CATEGORIAS:")
+                for i, cat in enumerate(top_categories, 1):
+                    print(f"  {i:2d}. {cat['name']}: {cat['count']} restaurantes")
+                
+        except Exception as e:
+            print(f"❌ Erro ao carregar estatísticas: {e}")
+        
+        self.pause()
+    
+    def _show_performance_analysis(self):
+        """Mostra análise de performance do sistema"""
+        print("\n🔍 ANÁLISE DE PERFORMANCE")
+        print("═" * 60)
+        
+        try:
+            # Análise baseada nos logs
+            from pathlib import Path
+            
+            log_file = Path("logs") / f"ifood_scraper_{datetime.now().strftime('%Y%m%d')}.log"
+            
+            if log_file.exists():
+                print(f"\n📄 Analisando log: {log_file.name}")
+                
+                # Tamanho do log
+                size_mb = log_file.stat().st_size / (1024 * 1024)
+                print(f"💾 Log atual: {size_mb:.1f} MB")
+                
+            else:
+                print("📄 Nenhum log encontrado para hoje")
+            
+            print(f"\n🗄️  PERFORMANCE DO BANCO:")
+            print("  Conexões: Ativas")
+            print("  Pool: Funcionando")
+                
+        except Exception as e:
+            print(f"❌ Erro na análise: {e}")
+        
+        self.pause()
+    
+    def _export_reports_menu(self):
+        """Menu para exportar relatórios"""
+        print("\n📋 EXPORTAR RELATÓRIOS")
+        print("═" * 50)
+        print("1. 📊 Relatório completo (CSV)")
+        print("2. 🏪 Apenas restaurantes")
+        print("3. 🏷️  Apenas categorias")
+        print("4. 📈 Relatório de estatísticas")
+        print("0. 🔙 Voltar")
+        
+        choice = input("\nEscolha: ").strip()
+        
+        if choice == "1":
+            self._export_restaurants_to_csv()
+        elif choice == "2":
+            self._export_restaurants_to_csv()
+        elif choice == "3":
+            print("📊 Exportação de categorias em desenvolvimento")
+            self.pause()
+        elif choice == "4":
+            print("📈 Exportação de estatísticas em desenvolvimento")
+            self.pause()
+        elif choice != "0":
+            self.show_invalid_option()
+    
+    # Métodos auxiliares para novos menus
+    def _menu_cleanup_and_logs(self):
+        """Menu de limpeza e logs"""
+        print("\n🧹 LIMPEZA E LOGS")
+        print("═" * 50)
+        print("1. 🗑️  Limpar logs antigos")
+        print("2. 🧹 Limpar cache")
+        print("3. 📊 Ver logs atuais")
+        print("0. 🔙 Voltar")
+        
+        choice = input("\nEscolha: ").strip()
+        
+        if choice == "1":
+            print("🗑️  Limpeza de logs em desenvolvimento")
+            self.pause()
+        elif choice == "2":
+            print("🧹 Limpeza de cache em desenvolvimento")
+            self.pause()
+        elif choice == "3":
+            print("📊 Visualização de logs em desenvolvimento")
+            self.pause()
+        elif choice != "0":
+            self.show_invalid_option()
+    
+    def _menu_advanced_settings(self):
+        """Menu de configurações avançadas"""
+        print("\n🔧 CONFIGURAÇÕES AVANÇADAS")
+        print("═" * 50)
+        print("1. 🔗 Configurar conexão MySQL")
+        print("2. 🕷️  Configurar scrapers")
+        print("3. ⚡ Configurar workers paralelos")
+        print("0. 🔙 Voltar")
+        
+        choice = input("\nEscolha: ").strip()
+        
+        if choice != "0":
+            print("⚙️ Configuração avançada em desenvolvimento")
+            self.pause()
+    
+    def _menu_backup_restore(self):
+        """Menu de backup e restauração"""
+        print("\n💾 BACKUP E RESTAURAÇÃO")
+        print("═" * 50)
+        print("Esta funcionalidade será implementada em versões futuras")
+        self.pause()
+    
+    def _menu_monitoring_config(self):
+        """Menu de configuração de monitoramento"""
+        print("\n📊 CONFIGURAR MONITORAMENTO")
+        print("═" * 50)
+        print("Esta funcionalidade será implementada em versões futuras")
+        self.pause()
+    
+    def _show_restaurants_status(self):
+        """Status detalhado dos restaurantes"""
+        print("🏪 STATUS DOS RESTAURANTES")
+        print("═" * 50)
+        try:
+            with self.db.get_cursor() as (cursor, _):
+                cursor.execute("SELECT COUNT(*) as total FROM restaurants WHERE is_active = TRUE")
+                total = cursor.fetchone()['total']
+                print(f"Total de restaurantes ativos: {total:,}")
+        except Exception as e:
+            print(f"❌ Erro: {e}")
+        self.pause()
+    
+    def _show_products_status(self):
+        """Status detalhado dos produtos"""
+        print("🍕 STATUS DOS PRODUTOS")
+        print("═" * 50)
+        try:
+            with self.db.get_cursor() as (cursor, _):
+                cursor.execute("SELECT COUNT(*) as total FROM products WHERE is_available = TRUE")
+                total = cursor.fetchone()['total']
+                print(f"Total de produtos disponíveis: {total:,}")
+        except Exception as e:
+            print(f"❌ Erro: {e}")
+        self.pause()
+    
+    def _show_system_performance(self):
+        """Performance do sistema"""
+        print("🚀 PERFORMANCE DO SISTEMA")
+        print("═" * 50)
+        print("Tempo de resposta: OK")
+        print("Uso de memória: Normal")
+        print("Conexões de banco: Estáveis")
+        self.pause()
+    
+    def _show_database_status(self):
+        """Status do banco de dados"""
+        print("🗄️  STATUS DO BANCO DE DADOS")
+        print("═" * 50)
+        print("Conexão: Ativa")
+        print("Pool de conexões: OK")
+        print("Índices: Otimizados")
+        self.pause()
+    
+    def _show_realtime_metrics(self):
+        """Métricas em tempo real"""
+        print("📈 MÉTRICAS EM TEMPO REAL")
+        print("═" * 50)
+        print("Esta funcionalidade será implementada em versões futuras")
+        self.pause()

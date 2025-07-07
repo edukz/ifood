@@ -9,10 +9,14 @@ import sys
 from pathlib import Path
 from datetime import datetime
 from typing import Dict, Any
+from dotenv import load_dotenv
 
 # Adiciona o diretório raiz ao path
 project_root = Path(__file__).parent
 sys.path.insert(0, str(project_root))
+
+# Carrega variáveis de ambiente do arquivo .env
+load_dotenv()
 
 # Classe simples para substituir ParallelScraper
 class SimpleScraperConfig:
@@ -31,7 +35,6 @@ from src.config.settings import SETTINGS
 from src.ui.extraction_menus import ExtractionMenus
 from src.ui.analysis_menus import AnalysisMenus
 from src.ui.system_menus import SystemMenus
-
 
 class iFoodMenuSystem:
     """Sistema de menu principal integrado e modular"""
@@ -87,19 +90,17 @@ class iFoodMenuSystem:
         print("═" * 80)
     
     def show_main_menu(self):
-        """Mostra menu principal"""
+        """Mostra menu principal reorganizado"""
         print("\n🎯 MENU PRINCIPAL:")
         print("1. 🏷️  Extrair Categorias")
         print("2. 🏪 Extrair Restaurantes")
         print("3. 🍕 Extrair Produtos")
         print("4. 🚀 Execução Paralela")
         print("5. 🔍 Sistema de Busca")
-        print("6. 🤖 Categorização Automática")
-        print("7. 💰 Monitoramento de Preços")
-        print("8. 🗜️  Gerenciar Arquivos")
-        print("9. 📊 Relatórios e Análises")
-        print("10. ⚙️  Configurações")
-        print("11. 📋 Status do Sistema")
+        print("6. 🏪 Visualizar Restaurantes")
+        print("7. 📊 Relatórios e Análises")
+        print("8. ⚙️  Configurações")
+        print("9. 📋 Status do Sistema")
         print("0. 🚪 Sair")
         print("═" * 80)
     
@@ -125,17 +126,13 @@ class iFoodMenuSystem:
                 elif choice == "5":
                     self.system_menus.menu_search_system()
                 elif choice == "6":
-                    self.analysis_menus.menu_product_categorizer()
+                    self.system_menus.view_restaurants_menu()
                 elif choice == "7":
-                    self.analysis_menus.menu_price_monitor()
+                    self.system_menus.menu_reports_and_analytics()
                 elif choice == "8":
-                    self.system_menus.menu_archive_manager()
+                    self.system_menus.menu_settings_expanded()
                 elif choice == "9":
-                    self.system_menus.menu_reports()
-                elif choice == "10":
-                    self.system_menus.menu_settings()
-                elif choice == "11":
-                    self.system_menus.show_system_status()
+                    self.system_menus.menu_system_status_consolidated()
                 elif choice == "0":
                     self._shutdown()
                     break
@@ -169,12 +166,10 @@ class iFoodMenuSystem:
         print("\n✅ Sistema encerrado com sucesso!")
         print("🍔 Obrigado por usar o iFood Scraper!")
 
-
 def main():
     """Função principal"""
     system = iFoodMenuSystem()
     system.run()
-
 
 if __name__ == "__main__":
     main()

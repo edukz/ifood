@@ -1,0 +1,7 @@
+# Ignorar arquivos de debug e scripts temporários
+debug_scripts/
+deprecated/
+
+# Manter apenas screenshots de erro importantes
+screenshots/*.png
+!screenshots/error_*.png
