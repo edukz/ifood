@@ -19,12 +19,33 @@ class ExtractionMenus(BaseMenu):
     def __init__(self, session_stats: Dict[str, Any], data_dir: Path):
         super().__init__("Extração", session_stats, data_dir)
     
+    def menu_scrapy_unitario(self):
+        """Menu unificado para scrapy unitário"""
+        options = [
+            "1. 🏷️  Extrair Categorias",
+            "2. 🏪 Extrair Restaurantes", 
+            "3. 🍕 Extrair Produtos"
+        ]
+        
+        self.show_menu("🔧 SCRAPY UNITÁRIO", options)
+        choice = self.get_user_choice(3)
+        
+        if choice == "1":
+            self.menu_extract_categories()
+        elif choice == "2":
+            self.menu_extract_restaurants()
+        elif choice == "3":
+            self.menu_extract_products()
+        elif choice == "0":
+            return
+    
     def menu_extract_categories(self):
         """Menu para extração de categorias"""
         print("\n🏷️  EXTRAÇÃO DE CATEGORIAS")
         print("═" * 50)
         
-        city = input("Digite a cidade [Birigui]: ").strip() or "Birigui"
+        from src.config.settings import SETTINGS
+        city = input(f"Digite a cidade [{SETTINGS.city}]: ").strip() or SETTINGS.city
         
         print(f"\n🔄 Extraindo categorias de {city}...")
         
@@ -62,8 +83,9 @@ class ExtractionMenus(BaseMenu):
         # Verificar se há categorias no banco de dados
         try:
             from src.database.database_adapter import get_database_manager
+            from src.config.settings import SETTINGS
             db = get_database_manager()
-            categories = db.get_categories("Birigui")
+            categories = db.get_categories(SETTINGS.city)
         except Exception as e:
             self.logger.error(f"Erro ao acessar banco: {e}")
             categories = []
@@ -140,12 +162,13 @@ class ExtractionMenus(BaseMenu):
         try:
             from playwright.sync_api import sync_playwright
             from src.scrapers.restaurant_scraper import RestaurantScraper
+            from src.config.settings import SETTINGS
             
             total_restaurants = 0
             successful_categories = 0
             
             with sync_playwright() as p:
-                scraper = RestaurantScraper(city="Birigui")
+                scraper = RestaurantScraper(city=SETTINGS.city)
                 
                 for i, category in enumerate(categories, 1):
                     print(f"\n📁 Processando categoria {i}/{len(categories)}: {category.get('name')}")
@@ -203,9 +226,10 @@ class ExtractionMenus(BaseMenu):
             # Usar RestaurantScraper com playwright
             from playwright.sync_api import sync_playwright
             from src.scrapers.restaurant_scraper import RestaurantScraper
+            from src.config.settings import SETTINGS
             
             with sync_playwright() as p:
-                scraper = RestaurantScraper(city="Birigui")
+                scraper = RestaurantScraper(city=SETTINGS.city)
                 # Usa run_for_category com URL e nome da categoria
                 result = scraper.run_for_category(
                     p, 
@@ -239,12 +263,13 @@ class ExtractionMenus(BaseMenu):
         try:
             from playwright.sync_api import sync_playwright
             from src.scrapers.product_scraper import ProductScraper
+            from src.config.settings import SETTINGS
             import csv
             
             total_products = 0
             
             with sync_playwright() as p:
-                scraper = ProductScraper(city="Birigui")
+                scraper = ProductScraper(city=SETTINGS.city)
                 
                 for i, restaurant_file in enumerate(restaurant_files, 1):
                     print(f"\n📁 Processando arquivo {i}/{len(restaurant_files)}: {restaurant_file.name}")
@@ -322,6 +347,7 @@ class ExtractionMenus(BaseMenu):
             
             from playwright.sync_api import sync_playwright
             from src.scrapers.product_scraper import ProductScraper
+            from src.config.settings import SETTINGS
             import csv
             
             # Lê restaurantes do arquivo CSV
@@ -344,7 +370,7 @@ class ExtractionMenus(BaseMenu):
             total_products = 0
             
             with sync_playwright() as p:
-                scraper = ProductScraper(city="Birigui")
+                scraper = ProductScraper(city=SETTINGS.city)
                 
                 for i, restaurant in enumerate(restaurants, 1):
                     restaurant_name = restaurant.get('name', 'N/A')
@@ -379,3 +405,4 @@ class ExtractionMenus(BaseMenu):
             print(f"❌ Erro: {e}")
         
         self.pause()
+    

@@ -1,17 +1,22 @@
 from dataclasses import dataclass
 from typing import Optional
+import os
+from dotenv import load_dotenv
+
+# Carrega variáveis de ambiente
+load_dotenv(override=True)
 
 
 @dataclass
 class ScraperSettings:
     """Configurações do web scraper"""
-    headless: bool = False
-    timeout: int = 30000
+    headless: bool = os.getenv('HEADLESS_MODE', 'false').lower() == 'true'
+    timeout: int = int(os.getenv('BROWSER_TIMEOUT', 30000))
     wait_time: int = 3
-    city: str = "Birigui"
+    city: str = os.getenv('DEFAULT_CITY', 'Birigui').strip('"')
     
     # Diretórios
-    output_dir: str = "data"
+    output_dir: str = os.getenv('OUTPUT_DIR', 'data').strip('"')
     categories_dir: str = "data/categories"
     restaurants_dir: str = "data/restaurants"
     products_dir: str = "data/products"
@@ -23,7 +28,7 @@ class ScraperSettings:
     log_max_size_mb: int = 50      # Tamanho máximo de log antes de rotacionar
     log_to_console: bool = True    # Mostrar logs no console
     log_to_file: bool = True       # Salvar logs em arquivo
-    log_level: str = "INFO"        # Nível de log (DEBUG, INFO, WARNING, ERROR)
+    log_level: str = os.getenv('LOG_LEVEL', 'INFO')        # Nível de log (DEBUG, INFO, WARNING, ERROR)
     
 
 @dataclass

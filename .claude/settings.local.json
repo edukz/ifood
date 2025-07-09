@@ -26,7 +26,15 @@
       "Bash(echo:*)",
       "Bash(source:*)",
       "Bash(./venv/bin/python:*)",
-      "Bash(./venv/bin/pip install:*)"
+      "Bash(./venv/bin/pip install:*)",
+      "Bash(sed:*)",
+      "Bash(export DB_PASSWORD=ifood_password)",
+      "Bash(ip route:*)",
+      "Bash(git checkout:*)",
+      "Bash(test:*)",
+      "Bash(venv/bin/pip install:*)",
+      "Bash(venv/bin/python -m pip install:*)",
+      "Bash(cp:*)"
     ],
     "deny": []
   }

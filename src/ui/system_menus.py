@@ -10,15 +10,36 @@ from pathlib import Path
 from typing import Dict, List, Any
 from datetime import datetime
 
-# ParallelScraper removido - usando configuração simples
 from src.scrapers.parallel.windows_parallel_scraper import WindowsParallelScraper, detect_windows
-from src.scrapers.parallel.real_parallel_restaurant_scraper import RealParallelRestaurantScraper
 from src.utils.search_optimizer import SearchIndex, QueryOptimizer
 from tools.archive_manager import ArchiveManager
 from .base_menu import BaseMenu
 from src.config.database import execute_query
-from tabulate import tabulate
-import pandas as pd
+from src.config.settings import SETTINGS
+# Optional imports - sistema funciona sem eles
+try:
+    from tabulate import tabulate
+    TABULATE_AVAILABLE = True
+except ImportError:
+    TABULATE_AVAILABLE = False
+    def tabulate(data, headers=None, **kwargs):
+        """Fallback function for when tabulate is not available"""
+        if not data:
+            return "Nenhum dado disponível"
+        
+        result = []
+        if headers:
+            result.append("\t".join(str(h) for h in headers))
+            result.append("-" * 50)
+        
+        for row in data:
+            if isinstance(row, dict):
+                result.append("\t".join(str(row.get(h, '')) for h in (headers or row.keys())))
+            else:
+                result.append("\t".join(str(cell) for cell in row))
+        
+        return "\n".join(result)
+
 from src.database.database_adapter import get_database_manager
 
 
@@ -26,10 +47,8 @@ class SystemMenus(BaseMenu):
     """Menus para funcionalidades do sistema"""
     
     def __init__(self, session_stats: Dict[str, Any], data_dir: Path,
-                 parallel_scraper: Any, search_optimizer: QueryOptimizer,
-                 archive_manager: ArchiveManager):
+                 search_optimizer: QueryOptimizer, archive_manager: ArchiveManager):
         super().__init__("Sistema", session_stats, data_dir)
-        self.parallel_scraper = parallel_scraper
         self.search_optimizer = search_optimizer
         self.archive_manager = archive_manager
         self.db = get_database_manager()
@@ -137,9 +156,10 @@ class SystemMenus(BaseMenu):
             "1. 🏷️  Extrair categorias em paralelo",
             "2. 🏪 Extrair restaurantes em paralelo",
             "3. 🍕 Extrair produtos em paralelo",
-            "4. 🎯 Execução completa (categorias → restaurantes → produtos)",
-            "5. ⚙️  Configurar workers",
-            "6. 📊 Demonstração de performance"
+            "4. 🎯 Scraper completo paralelo (Reviews + Info + Horários)",
+            "5. 🔄 Execução completa (categorias → restaurantes → produtos)",
+            "6. ⚙️  Configurar workers",
+            "7. 📊 Demonstração de performance"
         ]
         
         self.show_menu("🚀 EXECUÇÃO PARALELA", options)
@@ -227,7 +247,7 @@ class SystemMenus(BaseMenu):
         try:
             from src.database.database_adapter import get_database_manager
             db = get_database_manager()
-            all_categories = db.get_categories("Birigui")
+            all_categories = db.get_categories(SETTINGS.city)
         except Exception as e:
             self.logger.error(f"Erro ao acessar banco: {e}")
             all_categories = []
@@ -836,7 +856,7 @@ class SystemMenus(BaseMenu):
                 from src.scrapers.optimized.ultra_fast_parallel_scraper import UltraFastParallelScraper
                 
                 db = get_database_manager()
-                categories = db.get_categories("Birigui")
+                categories = db.get_categories(SETTINGS.city)
                 
                 if not categories:
                     raise Exception("Nenhuma categoria encontrada após extração")

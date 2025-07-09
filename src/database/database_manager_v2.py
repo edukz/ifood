@@ -15,18 +15,21 @@ from dotenv import load_dotenv
 from src.utils.logger import setup_logger
 
 # Carregar variáveis de ambiente
-load_dotenv()
+load_dotenv(override=True)  # Force reload
 
 class DatabaseConfig:
     """Configuração do banco de dados"""
     def __init__(self):
-        self.host = os.getenv('DB_HOST', 'localhost')
+        self.host = os.getenv('DB_HOST', '127.0.0.1')
         self.port = int(os.getenv('DB_PORT', 3306))
-        self.user = os.getenv('DB_USER', 'ifood_user')
-        self.password = os.getenv('DB_PASSWORD', 'ifood_password')
-        self.database = os.getenv('DB_NAME', 'ifood_scraper_v2')
+        self.user = os.getenv('DB_USER', 'root')
+        self.password = os.getenv('DB_PASSWORD', 'Dedolas1901*')
+        self.database = os.getenv('DB_NAME', 'ifood_scraper_v3')
         self.pool_size = int(os.getenv('DB_POOL_SIZE', 5))
-        self.pool_name = "ifood_pool"
+        self.pool_name = "ifood_connection_pool"
+        
+        # Debug: mostrar qual configuração está sendo usada
+        print(f"[DEBUG] Conectando com: {self.user}@{self.host}:{self.port}/{self.database}")
         
     def get_config(self) -> dict:
         """Retorna configuração para conexão"""
@@ -141,12 +144,12 @@ class DatabaseManagerV2:
                     # INSERT ... ON DUPLICATE KEY UPDATE
                     cursor.execute("""
                         INSERT INTO categories (name, slug, url, icon_url, city)
-                        VALUES (%s, %s, %s, %s, %s)
+                        VALUES (%s, %s, %s, %s, %s) AS new_cat
                         ON DUPLICATE KEY UPDATE
-                            name = VALUES(name),
-                            url = VALUES(url),
-                            icon_url = VALUES(icon_url),
-                            city = VALUES(city),
+                            name = new_cat.name,
+                            url = new_cat.url,
+                            icon_url = new_cat.icon_url,
+                            city = new_cat.city,
                             updated_at = CURRENT_TIMESTAMP
                     """, (
                         category['name'],
@@ -214,19 +217,19 @@ class DatabaseManagerV2:
                         ) VALUES (
                             %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 
                             %s, %s, %s, %s, %s, %s
-                        )
+                        ) AS new_rest
                         ON DUPLICATE KEY UPDATE
-                            rating = VALUES(rating),
-                            delivery_time = VALUES(delivery_time),
-                            delivery_fee = VALUES(delivery_fee),
-                            distance = VALUES(distance),
-                            logo_url = VALUES(logo_url),
-                            address = COALESCE(VALUES(address), address),
-                            phone = COALESCE(VALUES(phone), phone),
-                            opening_hours = COALESCE(VALUES(opening_hours), opening_hours),
-                            minimum_order = COALESCE(VALUES(minimum_order), minimum_order),
-                            payment_methods = COALESCE(VALUES(payment_methods), payment_methods),
-                            tags = COALESCE(VALUES(tags), tags),
+                            rating = new_rest.rating,
+                            delivery_time = new_rest.delivery_time,
+                            delivery_fee = new_rest.delivery_fee,
+                            distance = new_rest.distance,
+                            logo_url = new_rest.logo_url,
+                            address = COALESCE(new_rest.address, address),
+                            phone = COALESCE(new_rest.phone, phone),
+                            opening_hours = COALESCE(new_rest.opening_hours, opening_hours),
+                            minimum_order = COALESCE(new_rest.minimum_order, minimum_order),
+                            payment_methods = COALESCE(new_rest.payment_methods, payment_methods),
+                            tags = COALESCE(new_rest.tags, tags),
                             last_scraped = CURRENT_TIMESTAMP,
                             updated_at = CURRENT_TIMESTAMP
                     """, (
@@ -325,18 +328,18 @@ class DatabaseManagerV2:
                             calories, ingredients, allergens
                         ) VALUES (
                             %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
-                        )
+                        ) AS new_prod
                         ON DUPLICATE KEY UPDATE
-                            description = VALUES(description),
-                            price = VALUES(price),
-                            original_price = VALUES(original_price),
-                            image_url = VALUES(image_url),
-                            is_available = VALUES(is_available),
-                            preparation_time = VALUES(preparation_time),
-                            serves_people = VALUES(serves_people),
-                            calories = VALUES(calories),
-                            ingredients = VALUES(ingredients),
-                            allergens = VALUES(allergens),
+                            description = new_prod.description,
+                            price = new_prod.price,
+                            original_price = new_prod.original_price,
+                            image_url = new_prod.image_url,
+                            is_available = new_prod.is_available,
+                            preparation_time = new_prod.preparation_time,
+                            serves_people = new_prod.serves_people,
+                            calories = new_prod.calories,
+                            ingredients = new_prod.ingredients,
+                            allergens = new_prod.allergens,
                             updated_at = CURRENT_TIMESTAMP
                     """, (
                         unique_key,

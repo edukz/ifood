@@ -9,8 +9,11 @@ def ensure_directories():
     os.makedirs(SETTINGS.output_dir, exist_ok=True)
     os.makedirs(SETTINGS.log_dir, exist_ok=True)
 
-def save_to_mysql(data: List[Dict[str, Any]], data_type: str = "restaurants", category: str = "Geral", city: str = "São Paulo"):
+def save_to_mysql(data: List[Dict[str, Any]], data_type: str = "restaurants", category: str = "Geral", city: str = None):
     """Salva dados no MySQL (substitui save_to_csv)"""
+    if city is None:
+        city = SETTINGS.city
+    
     if not data:
         return None
     

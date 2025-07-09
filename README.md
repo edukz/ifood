@@ -1,334 +1,507 @@
-# iFood Web Scraper
+# 🍔 iFood Data Scraper & Analytics Platform
 
-Um scraper profissional para extrair dados de categorias e restaurantes da plataforma iFood, desenvolvido com Playwright para simular comportamento humano e evitar detecção.
+Uma plataforma profissional para extração, análise e monitoramento de dados da plataforma iFood, desenvolvida com arquitetura modular, banco de dados MySQL e interface de usuário avançada.
 
-## Características Principais
+## 🚀 Características Principais
 
-- **Arquitetura Modular**: Organização profissional com separação de responsabilidades
-- **Comportamento Humano**: Simula ações humanas com delays aleatórios e movimentos de mouse
-- **Controle de Duplicatas**: Sistema de hash MD5 para evitar dados duplicados
-- **Organização por Categoria**: Arquivos CSV separados para cada tipo de comida
-- **Sistema de Logs Completo**: Rastreamento detalhado de todas as operações
-- **Tratamento de Erros Robusto**: Retry automático e screenshots para debug
+- **🏗️ Arquitetura Modular**: Sistema organizado com separação de responsabilidades
+- **🗄️ Banco de Dados MySQL**: Armazenamento robusto com pool de conexões
+- **🎯 Interface Unificada**: Sistema de menus modular com scrapy unitário
+- **📊 Analytics Avançado**: Monitoramento de preços e análise de tendências
+- **🔍 Sistema de Busca**: Otimização e indexação inteligente
+- **🤖 Comportamento Humano**: Simula ações humanas para evitar detecção
+- **🛡️ Sistema de Retry**: Tratamento robusto de erros com circuit breaker
+- **📈 Monitoramento**: Performance e progresso em tempo real
 
-## Estrutura do Projeto
+## 🏗️ Estrutura do Projeto
 
 ```
 ifood/
-├── main.py                    # Ponto de entrada principal
-├── INSTALL.md                 # Guia de instalação detalhado
-├── .env.example              # Exemplo de variáveis de ambiente
-├── .gitignore                # Configurações Git
-├── src/                      # Código fonte
-│   ├── config/               # Configurações
-│   │   ├── settings.py       # Configurações gerais
-│   │   └── browser_config.py # Configurações do navegador
-│   ├── models/               # Modelos de dados
-│   │   ├── category.py       # Modelo de categoria
-│   │   └── restaurant.py     # Modelo de restaurante
-│   ├── scrapers/             # Scrapers especializados
-│   │   ├── base.py          # Classe base
-│   │   ├── ifood_scraper.py # Scraper principal
-│   │   ├── category_scraper.py # Extração de categorias
-│   │   └── restaurant_scraper.py # Extração de restaurantes
-│   └── utils/                # Utilitários
-│       ├── database.py       # Gerenciamento de dados
-│       ├── error_handler.py  # Tratamento de erros
-│       ├── human_behavior.py # Simulação humana
-│       ├── helpers.py        # Funções auxiliares
-│       └── logger.py         # Sistema de logs
-├── config/                   # Arquivos de configuração
-│   └── requirements.txt      # Dependências Python
-├── data/                     # Dados extraídos (CSV e JSON)
-├── logs/                     # Arquivos de log atuais
-├── docs/                     # Documentação adicional
-│   ├── CORRECOES_APLICADAS.md
-│   ├── MELHORIAS_DADOS.md
-│   └── MELHORIAS_POPUP.md
-├── examples/                 # Exemplos de uso
-│   └── basic_usage.py        # Exemplo básico completo
-├── tools/                    # Ferramentas auxiliares
-│   ├── check_dependencies.py # Verificador de dependências
-│   └── data_analyzer.py      # Analisador de dados
-├── archive/                  # Arquivos antigos
-│   ├── old_logs/            # Logs históricos
-│   └── screenshots/         # Screenshots de erro
-└── temp_data/               # Dados temporários
+├── main.py                     # 🎯 Ponto de entrada - Sistema unificado
+├── README.md                   # 📖 Documentação principal
+├── .env.example               # ⚙️ Exemplo de configuração
+├── src/                       # 💻 Código fonte
+│   ├── config/                # ⚙️ Configurações
+│   │   ├── settings.py        # 🔧 Configurações gerais
+│   │   ├── browser_config.py  # 🌐 Configurações do navegador
+│   │   └── database.py        # 🗄️ Configurações MySQL
+│   ├── database/              # 🗄️ Gerenciadores de banco
+│   │   ├── database_manager_v2.py # 📊 Gerenciador MySQL V2
+│   │   └── database_adapter.py    # 🔄 Adaptador de compatibilidade
+│   ├── models/                # 🏷️ Modelos de dados
+│   │   ├── category.py        # 📂 Modelo de categoria
+│   │   ├── restaurant.py      # 🏪 Modelo de restaurante
+│   │   └── product.py         # 🍽️ Modelo de produto
+│   ├── scrapers/              # 🕷️ Scrapers especializados
+│   │   ├── base.py            # 🔧 Classe base
+│   │   ├── category_scraper.py # 📂 Extração de categorias
+│   │   ├── restaurant_scraper.py # 🏪 Extração de restaurantes
+│   │   ├── product_scraper.py  # 🍽️ Extração de produtos
+│   │   ├── optimized/         # ⚡ Scrapers otimizados
+│   │   └── parallel/          # 🔄 Scrapers paralelos
+│   ├── ui/                    # 🖥️ Interface de usuário
+│   │   ├── base_menu.py       # 🔧 Classe base dos menus
+│   │   ├── extraction_menus.py # 📊 Menus de extração
+│   │   ├── analysis_menus.py   # 📈 Menus de análise
+│   │   └── system_menus.py     # ⚙️ Menus do sistema
+│   └── utils/                 # 🛠️ Utilitários
+│       ├── logger.py          # 📝 Sistema de logs
+│       ├── helpers.py         # 🔧 Funções auxiliares
+│       ├── retry_handler.py   # 🔄 Sistema de retry
+│       ├── performance_monitor.py # 📊 Monitor de performance
+│       ├── price_monitor.py    # 💰 Monitoramento de preços
+│       ├── product_categorizer.py # 🏷️ Categorização automática
+│       ├── search_optimizer.py # 🔍 Otimização de busca
+│       └── dashboard_server.py # 📊 Servidor de dashboard
+├── database/                  # 🗄️ Sistema de banco de dados
+│   ├── README_V2.md           # 📖 Documentação do banco
+│   ├── complete_database_setup.sql # 🔧 Setup completo
+│   ├── schema_v2_clean.sql    # 📊 Schema MySQL V2
+│   └── create_database.sql    # 🔨 Criação do banco
+├── cache/                     # 📦 Sistema de cache
+│   └── search_indexes/        # 🔍 Índices de busca
+├── tests/                     # 🧪 Testes automatizados
+├── config/                    # ⚙️ Configurações
+│   └── requirements.txt       # 📋 Dependências Python
+├── data/                      # 📊 Dados persistidos
+│   └── price_history.db       # 💰 Histórico de preços
+├── logs/                      # 📝 Arquivos de log
+├── tools/                     # 🔧 Ferramentas auxiliares
+│   ├── check_dependencies.py  # ✅ Verificador de dependências
+│   ├── archive_manager.py     # 📦 Gerenciador de arquivos
+│   ├── migrate_data_structure.py # 🔄 Migração de dados
+│   └── refresh_search_indexes.py # 🔍 Atualização de índices
+└── archive/                   # 📦 Arquivos arquivados
+    ├── compressed_data/       # 🗜️ Dados comprimidos
+    └── screenshots/           # 📸 Screenshots de debug
 ```
 
-## Instalação
+## 🚀 Instalação e Configuração
 
-Para instalação completa e detalhada, consulte o [Guia de Instalação](INSTALL.md).
-
-### Instalação Rápida
+### 1. **Dependências do Sistema**
 
 ```bash
-# 1. Instalar dependências
+# Ubuntu/Debian
+sudo apt-get install mysql-server python3-pip python3-venv
+
+# Verificar MySQL
+sudo systemctl status mysql
+```
+
+### 2. **Configuração do Banco de Dados**
+
+```bash
+# Criar banco de dados
+mysql -u root -p
+CREATE DATABASE ifood_scraper_v3;
+CREATE USER 'ifood_user'@'localhost' IDENTIFIED BY 'sua_senha';
+GRANT ALL PRIVILEGES ON ifood_scraper_v3.* TO 'ifood_user'@'localhost';
+FLUSH PRIVILEGES;
+```
+
+### 3. **Instalação do Python**
+
+```bash
+# Criar ambiente virtual
+python3 -m venv venv
+source venv/bin/activate  # Linux/Mac
+# ou
+venv\Scripts\activate     # Windows
+
+# Instalar dependências
 pip install -r config/requirements.txt
 
-# 2. Configurar Playwright
+# Configurar Playwright
 playwright install
-sudo playwright install-deps  # Linux/WSL
+```
 
-# 3. Verificar instalação
+### 4. **Configuração do Ambiente**
+
+```bash
+# Copiar arquivo de exemplo
+cp .env.example .env
+
+# Editar configurações
+nano .env
+```
+
+**Exemplo de .env:**
+```bash
+DB_HOST=localhost
+DB_PORT=3306
+DB_USER=ifood_user
+DB_PASSWORD=sua_senha
+DB_NAME=ifood_scraper_v3
+DEFAULT_CITY="São Paulo"
+HEADLESS_MODE=true
+```
+
+### 5. **Verificação da Instalação**
+
+```bash
+# Verificar dependências
 python tools/check_dependencies.py
+
+# Testar conexão com banco
+python -c "from src.database.database_adapter import get_database_manager; print('✅ Conexão OK')"
 ```
 
-## Uso
+## 🎯 Como Usar
 
-### 1. Extrair Categorias
+### **Sistema de Menus Unificado**
 
-Coleta todas as categorias de comida disponíveis na cidade:
+Execute o sistema principal:
 
 ```bash
-python main.py --mode categories --city "Nome da Cidade"
+python main.py
 ```
 
-**Exemplo:**
-```bash
-python main.py --mode categories --city "São Paulo"
+**Menu Principal:**
+```
+🎯 MENU PRINCIPAL:
+1. 🔧 Scrapy Unitário
+2. 🚀 Execução Paralela
+3. 🔍 Sistema de Busca
+4. 🏪 Visualizar Restaurantes
+5. 📊 Relatórios e Análises
+6. ⚙️ Configurações
+7. 📋 Status do Sistema
+8. ℹ️ Informações do Sistema
+0. 🚪 Sair
 ```
 
-### 2. Extrair Restaurantes 🎯
+### **1. Scrapy Unitário (Recomendado)**
 
-Coleta dados dos restaurantes de uma categoria específica:
-
-```bash
-python main.py --mode restaurants --city "Nome da Cidade"
+**Fluxo recomendado:**
+```
+1. Scrapy Unitário (opção 1)
+   └── 1.1 - Extrair Categorias
+   └── 1.2 - Extrair Restaurantes
+   └── 1.3 - Extrair Produtos
 ```
 
-O sistema apresentará um menu interativo para selecionar a categoria desejada.
+**Submenu Scrapy Unitário:**
+```
+🔧 SCRAPY UNITÁRIO:
+1. 🏷️ Extrair Categorias
+2. 🏪 Extrair Restaurantes  
+3. 🍕 Extrair Produtos
+0. 🔙 Voltar
+```
 
-## Dados Extraídos
+### **2. Execução Paralela**
 
-### Categorias
+Para processar múltiplas categorias simultaneamente:
+
+```
+🚀 EXECUÇÃO PARALELA:
+1. 🏷️ Extrair categorias em paralelo
+2. 🏪 Extrair restaurantes em paralelo
+3. 🍕 Extrair produtos em paralelo
+4. 🔄 Execução completa (pipeline)
+5. ⚙️ Configurar workers
+6. 📊 Demonstração de performance
+```
+
+### **3. Sistema de Busca**
+
+Sistema de busca otimizada com indexação:
+
+- **Busca por nome**: Encontra restaurantes e produtos
+- **Busca por categoria**: Filtra por tipo de comida
+- **Busca avançada**: Múltiplos critérios
+- **Índices otimizados**: Respostas rápidas
+
+### **4. Análises e Relatórios**
+
+- **📊 Estatísticas gerais**: Totais e distribuições
+- **💰 Monitoramento de preços**: Variações e tendências
+- **🏷️ Categorização**: Análise de produtos por categoria
+- **📈 Relatórios**: Dados estruturados para análise
+
+## 🗄️ Banco de Dados MySQL
+
+### **Estrutura das Tabelas**
+
+```sql
+-- 8 tabelas principais
+CREATE TABLE categories (...)      -- Categorias de comida
+CREATE TABLE restaurants (...)     -- Dados dos restaurantes
+CREATE TABLE products (...)        -- Cardápios e produtos
+CREATE TABLE price_history (...)   -- Histórico de preços
+CREATE TABLE restaurant_details (...) -- Informações detalhadas
+CREATE TABLE reviews (...)         -- Avaliações de clientes
+CREATE TABLE extraction_logs (...)  -- Logs de extração
+CREATE TABLE system_config (...)   -- Configurações do sistema
+```
+
+### **Recursos Avançados**
+
+- **Pool de conexões**: Gerenciamento eficiente
+- **Retry automático**: Recuperação de falhas
+- **Transações**: Consistência de dados
+- **Índices otimizados**: Performance aprimorada
+- **Backup automático**: Proteção de dados
+
+## 📊 Dados Extraídos
+
+### **Categorias**
 - **Nome**: Nome da categoria (ex: "Japonesa", "Italiana")
 - **URL**: Link direto para a categoria
 - **Slug**: Identificador único
 - **Cidade**: Cidade de origem
 - **Ícone**: URL do ícone da categoria
 
-### Restaurantes 🚀
+### **Restaurantes**
 - **Nome**: Nome do restaurante
 - **Categoria**: Tipo de comida
 - **Avaliação**: Rating de 0 a 5 estrelas
-- **Tempo de Entrega**: Tempo estimado (ex: "30-40 min")
-- **Taxa de Entrega**: Custo de entrega (ex: "Grátis", "R$ 4,99")
-- **Distância**: Distância do restaurante (ex: "1.2 km")
-- **URL**: Link direto para o cardápio do restaurante
-- **Endereço**: Localização (quando disponível)
+- **Tempo de Entrega**: Tempo estimado
+- **Taxa de Entrega**: Custo de entrega
+- **Distância**: Distância do restaurante
+- **URL**: Link direto para o cardápio
+- **Endereço**: Localização completa
 
-### Produtos/Cardápio 🍽️
+### **Produtos**
 - **Nome**: Nome do produto/prato
 - **Descrição**: Detalhes e ingredientes
-- **Preço**: Valor atual de venda
-- **Preço Original**: Valor antes de promoções
-- **Categoria**: Tipo de produto (entrada, prato principal, etc)
-- **Disponibilidade**: Se está disponível para pedido
-- **Imagem**: URL da foto do produto
-- **Tempo de Preparo**: Quando informado
-- **Calorias**: Informação nutricional
-- **Tags**: Promoção, Vegano, Novo, etc
+- **Preço**: Valor atual e histórico
+- **Categoria**: Tipo de produto
+- **Disponibilidade**: Status do produto
+- **Imagem**: URL da foto
+- **Informações nutricionais**: Quando disponível
+- **Tags**: Promoção, Vegano, Novo, etc.
 
-## Arquivos Gerados
+## 🔧 Configurações Avançadas
 
-### Estrutura de Dados Organizada 📁
+### **Configurações do Sistema**
 
-```
-data/
-├── categories/                              # 📂 Categorias de comida
-│   └── ifood_data_categories.csv           #     Lista completa de categorias
-├── restaurants/                             # 🏪 Dados dos restaurantes
-│   ├── ifood_data_restaurantes_japonesa.csv #     Restaurantes japoneses
-│   ├── ifood_data_restaurantes_italiana.csv #     Restaurantes italianos
-│   └── ifood_data_restaurantes_brasileira.csv #   Restaurantes brasileiros
-├── products/                                # 🍽️ Cardápios e produtos
-│   ├── ifood_data_produtos_burger_king.csv #     Cardápio do Burger King
-│   ├── ifood_data_produtos_pizza_hut.csv   #     Cardápio da Pizza Hut
-│   └── ifood_data_produtos_sushi_house.csv #     Cardápio do Sushi House
-└── ifood_data_metadata.json                # 📊 Estatísticas gerais
-```
-
-### Exemplo de CSV - Restaurantes
-
-```csv
-id,nome,categoria,avaliacao,tempo_entrega,taxa_entrega,distancia,url,endereco,extracted_at
-abc123,Sushi House,Japonesa,4.8,30-40 min,Grátis,1.2 km,https://ifood.com.br/delivery/...,Rua das Flores 123,2025-07-01T20:30:00
-```
-
-## Configurações
-
-### Browser
-
-- **Modo**: Headless por padrão (pode ser alterado)
-- **User-Agent**: Simula navegadores reais
-- **Viewport**: 1920x1080 para melhor compatibilidade
-- **Timeout**: 30 segundos para carregamento de páginas
-
-### Comportamento Humano
-
-- **Delays Aleatórios**: 1-3 segundos entre ações
-- **Movimentos de Mouse**: Simulação de interação natural
-- **Scroll Inteligente**: Carregamento progressivo de conteúdo
-- **Retry Automático**: 3 tentativas em caso de falha
-
-## Sistema de Logs
-
-### Nova Arquitetura de Logs 🎯
-
-O sistema foi otimizado para reduzir a quantidade de arquivos de log:
-
-- **Um arquivo por dia**: Todos os componentes compartilham o mesmo arquivo
-- **Rotação automática**: Logs antigos são removidos após 7 dias
-- **Consolidação inteligente**: Múltiplas execuções no mesmo dia são agrupadas
-
-### Estrutura de Logs
-
-```
-logs/
-└── ifood_scraper_20250701.log    # Todos os logs do dia em um único arquivo
-
-archive/
-├── old_logs/                      # Logs históricos (limpeza automática)
-└── screenshots/                   # Screenshots de erro para debug
-```
-
-### Configurações
-
-No arquivo `src/config/settings.py`:
-- `log_retention_days`: Dias para manter logs (padrão: 7)
-- `log_level`: Nível de log (INFO, DEBUG, WARNING, ERROR)
-- `log_to_console`: Mostrar logs no console
-- `log_to_file`: Salvar logs em arquivo
-
-### Ferramentas de Manutenção
-
-```bash
-# Limpar logs antigos manualmente
-python tools/cleanup_logs.py
-```
-
-Opções disponíveis:
-1. Limpar logs com mais de 7 dias
-2. Remover TODOS os logs arquivados
-3. Consolidar logs do mesmo dia
-4. Limpeza completa (1 + 3)
-
-## Controle de Qualidade
-
-### Prevenção de Duplicatas
-
-- **Hash MD5**: Gerado a partir de nome + categoria + cidade
-- **Verificação Automática**: Antes de cada inserção
-- **Cache em Memória**: Para verificação rápida
-
-### Validação de Dados
-
-- **Campos Obrigatórios**: Nome e categoria sempre preenchidos
-- **Parsing Inteligente**: Extração de dados estruturados
-- **Fallback Seguro**: Valores padrão quando dados não disponíveis
-
-## Troubleshooting
-
-### Problemas Comuns
-
-**1. Erro de Dependências do Sistema**
-```bash
-# Instalar dependências necessárias
-sudo apt-get install libnss3 libnspr4 libasound2
-```
-
-**2. Timeout de Navegação**
-- Verifique a conexão de internet
-- Aumente o timeout nas configurações
-- Execute em horários de menor tráfego
-
-**3. Elementos Não Encontrados**
-- O sistema tenta múltiplos seletores automaticamente
-- Screenshots são salvos para análise
-- Logs detalhados mostram a causa
-
-### Debug Avançado
-
-- **Screenshots**: Salvos em `archive/` em caso de erro
-- **HTML Source**: Capturado para análise posterior
-- **Network Logs**: Monitoramento de requisições
-- **Verificador**: `python tools/check_dependencies.py`
-- **Analisador**: `python tools/data_analyzer.py`
-
-## Limitações e Considerações
-
-### Performance
-
-- **Velocidade**: Limitada pelos delays humanos (necessários para evitar detecção)
-- **Memória**: Otimizada para processar grandes volumes
-- **Concorrência**: Preparado para paralelização futura
-
-### Ética e Legalidade
-
-- **Respeito ao robots.txt**: Verificar políticas do site
-- **Rate Limiting**: Delays implementados para não sobrecarregar servidores
-- **Uso Responsável**: Apenas para fins educacionais e de pesquisa
-
-## Estatísticas de Exemplo
-
-Baseado no arquivo de metadados atual:
-
-```json
-{
-  "statistics": {
-    "categories": {
-      "total_saved": 15,
-      "total_duplicates": 90,
-      "last_update": "2025-07-01T20:01:04"
-    },
-    "restaurants": {
-      "total_saved": 156,
-      "total_duplicates": 0,
-      "last_update": "2025-07-01T20:50:36"
-    }
-  }
+```python
+# src/config/settings.py
+SETTINGS = {
+    'city': 'São Paulo',
+    'headless': True,
+    'max_workers': 3,
+    'retry_attempts': 3,
+    'delay_range': (1, 3),
+    'database_pool_size': 5
 }
 ```
 
-## Desenvolvimento Futuro
+### **Configurações do Banco**
 
-### Ferramentas Disponíveis
+```python
+# src/config/database.py
+DATABASE_CONFIG = {
+    'host': 'localhost',
+    'port': 3306,
+    'user': 'ifood_user',
+    'password': 'sua_senha',
+    'database': 'ifood_scraper_v3',
+    'pool_size': 5,
+    'retry_attempts': 3
+}
+```
 
-- **Verificador de Dependências**: `tools/check_dependencies.py`
-- **Analisador de Dados**: `tools/data_analyzer.py`
-- **Exemplos de Uso**: `examples/basic_usage.py`
+## 📊 Monitoramento e Analytics
 
-### Melhorias Planejadas
+### **Dashboard em Tempo Real**
 
-- **Paralelização**: Múltiplas categorias simultaneamente
-- **API REST**: Interface web para controle
-- **Dashboard**: Visualização dos dados coletados
-- **Agendamento**: Execução automática programada
+```bash
+# Iniciar dashboard
+python src/utils/dashboard_server.py
+```
 
-### Contribuições
+**Funcionalidades:**
+- 📊 Estatísticas em tempo real
+- 📈 Gráficos de performance
+- 💰 Monitoramento de preços
+- 🔍 Busca interativa
+- 📋 Logs do sistema
+
+### **Relatórios Automáticos**
+
+- **Relatório diário**: Resumo das atividades
+- **Análise de preços**: Variações e tendências
+- **Performance**: Métricas de extração
+- **Qualidade dos dados**: Validação automática
+
+## 🛠️ Ferramentas Auxiliares
+
+### **Verificação e Manutenção**
+
+```bash
+# Verificar dependências
+python tools/check_dependencies.py
+
+# Migrar estrutura de dados
+python tools/migrate_data_structure.py
+
+# Atualizar índices de busca
+python tools/refresh_search_indexes.py
+
+# Gerenciar arquivos
+python tools/archive_manager.py
+```
+
+### **Análise de Dados**
+
+```bash
+# Analisar duplicatas
+python tools/analyze_deduplication.py
+
+# Verificar contagem de restaurantes
+python tools/check_restaurants_count.py
+
+# Corrigir categorias
+python tools/fix_categories.py
+```
+
+## 🔍 Sistema de Logs
+
+### **Logs Unificados**
+
+```
+logs/
+└── ifood_scraper_20250709.log    # Todos os logs do dia
+```
+
+**Níveis de Log:**
+- **INFO**: Operações normais
+- **WARNING**: Alertas importantes
+- **ERROR**: Erros recuperáveis
+- **CRITICAL**: Erros fatais
+
+### **Configuração de Logs**
+
+```python
+# Configurações em src/config/settings.py
+LOG_CONFIG = {
+    'level': 'INFO',
+    'retention_days': 7,
+    'max_file_size': '10MB',
+    'backup_count': 5
+}
+```
+
+## 🚀 Performance e Otimizações
+
+### **Características de Performance**
+
+- **🔄 Pool de conexões**: MySQL otimizado
+- **⚡ Cache inteligente**: Índices de busca
+- **🔀 Processamento paralelo**: Múltiplos workers
+- **🎯 Retry automático**: Recuperação de falhas
+- **📊 Monitoramento**: Métricas em tempo real
+
+### **Benchmarks**
+
+```
+📊 Performance Típica:
+- Categorias: ~50 por minuto
+- Restaurantes: ~200 por minuto
+- Produtos: ~1000 por minuto
+- Uso de memória: ~100MB
+- Conexões DB: Pool de 5 conexões
+```
+
+## 🔐 Segurança e Ética
+
+### **Medidas de Segurança**
+
+- **🛡️ Rate limiting**: Delays entre requisições
+- **🎭 User-Agent rotation**: Múltiplos navegadores
+- **🔄 Retry inteligente**: Evita sobrecarga
+- **📊 Monitoramento**: Detecção de anomalias
+
+### **Uso Responsável**
+
+- **✅ Respeitar robots.txt**
+- **✅ Implementar delays apropriados**
+- **✅ Uso apenas para fins educacionais**
+- **✅ Não sobrecarregar servidores**
+
+## 🆕 Melhorias Recentes
+
+### **Versão 2.0 - Principais Mudanças**
+
+- **🗄️ Migração para MySQL**: De SQLite para MySQL
+- **🎯 Interface unificada**: Menu scrapy unitário
+- **📊 Analytics avançado**: Monitoramento de preços
+- **🔍 Sistema de busca**: Indexação otimizada
+- **🛡️ Sistema de retry**: Maior robustez
+- **📈 Dashboard**: Visualização em tempo real
+- **🧹 Código limpo**: Remoção de funcionalidades mortas
+
+### **Funcionalidades Adicionadas**
+
+- **🔧 Scrapy unitário**: Menu unificado de extração
+- **💰 Price monitoring**: Rastreamento de preços
+- **🏷️ Auto-categorização**: Classificação automática
+- **📊 Performance monitor**: Métricas em tempo real
+- **🔍 Search optimizer**: Busca otimizada
+- **📦 Archive manager**: Gerenciamento de arquivos
+
+## 📚 Documentação Adicional
+
+### **Arquivos de Documentação**
+
+- **📖 README.md**: Documentação principal
+- **🗄️ database/README_V2.md**: Documentação do banco
+- **📊 PROJECT_STRUCTURE.md**: Estrutura do projeto
+- **📋 docs/**: Documentação técnica detalhada
+
+### **Suporte e Troubleshooting**
+
+```bash
+# Verificar sistema
+python tools/check_dependencies.py
+
+# Verificar banco
+python -c "from src.database.database_adapter import get_database_manager; print('OK')"
+
+# Verificar logs
+tail -f logs/ifood_scraper_$(date +%Y%m%d).log
+```
+
+## 🔮 Desenvolvimento Futuro
+
+### **Roadmap**
+
+- **🌐 API REST**: Interface web completa
+- **📱 Mobile app**: Aplicativo móvel
+- **🤖 Machine learning**: Predição de preços
+- **🔄 Auto-scheduling**: Execução automática
+- **📊 BI Dashboard**: Business Intelligence
+- **🌍 Multi-região**: Suporte a múltiplas cidades
+
+### **Contribuições**
 
 Para contribuir com o projeto:
 
-1. Fork o repositório
-2. Crie uma branch para sua feature
-3. Commit suas mudanças
-4. Abra um Pull Request
+1. **Fork** o repositório
+2. **Clone** para sua máquina
+3. **Crie** uma branch para sua feature
+4. **Commit** suas mudanças
+5. **Push** para o GitHub
+6. **Abra** um Pull Request
 
-## Licença
+## 📄 Licença
 
-Este projeto é desenvolvido para fins educacionais. Use com responsabilidade e respeite os termos de uso dos sites.
+Este projeto é desenvolvido para **fins educacionais e de pesquisa**. Use com responsabilidade e respeite os termos de uso dos sites.
 
-## Suporte
+## 🎯 Suporte
 
 Para dúvidas ou problemas:
 
-- **Instalação**: Consulte `INSTALL.md`
-- **Verificação**: Execute `python tools/check_dependencies.py`
-- **Análise**: Use `python tools/data_analyzer.py`
-- **Logs**: Verifique `logs/` e `archive/old_logs/`
-- **Documentação**: Consulte `docs/` para detalhes técnicos
+- **🔧 Instalação**: Siga o guia de instalação
+- **🗄️ Banco de dados**: Consulte `database/README_V2.md`
+- **📊 Análise**: Use as ferramentas em `tools/`
+- **📝 Logs**: Verifique `logs/` para debug
+- **🔍 Busca**: Sistema de busca integrado
 
 ---
 
-**Desenvolvido com foco em qualidade, performance e ética no web scraping.**
+**🍔 Desenvolvido com foco em qualidade, performance e ética no web scraping.**
+
+*Sistema iFood Scraper & Analytics Platform v2.0*

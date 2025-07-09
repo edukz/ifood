@@ -9,6 +9,10 @@ import os
 from typing import Optional, Dict, Any
 import logging
 from contextlib import contextmanager
+from dotenv import load_dotenv
+
+# Carrega variáveis de ambiente do arquivo .env
+load_dotenv(override=True)  # Force reload
 
 # Importa sistema de retry
 from src.utils.retry_handler import (
@@ -22,11 +26,11 @@ class MySQLConfig:
     
     # Configurações padrão
     DEFAULT_CONFIG = {
-        'host': 'localhost',
+        'host': '127.0.0.1',
         'port': 3306,
-        'user': 'ifood',
-        'password': None,  # Deve ser definido via variável de ambiente
-        'database': 'ifood_scraper',
+        'user': 'root',
+        'password': 'Dedolas1901*',  # Password padrão do MySQL
+        'database': 'ifood_scraper_v3',
         'charset': 'utf8mb4',
         'collation': 'utf8mb4_unicode_ci',
         'autocommit': False,
@@ -36,8 +40,8 @@ class MySQLConfig:
     
     # Pool de conexões
     POOL_CONFIG = {
-        'pool_name': 'ifood_pool',
-        'pool_size': 10,
+        'pool_name': 'ifood_connection_pool',
+        'pool_size': 5,
         'pool_reset_session': True,
         'autocommit': False
     }
@@ -64,13 +68,8 @@ class MySQLConfig:
                     value = int(value)
                 config[config_key] = value
         
-        # Verificar se a senha foi definida
-        if not config.get('password'):
-            raise ValueError(
-                "DB_PASSWORD não foi definida! "
-                "Por favor, configure a variável de ambiente DB_PASSWORD ou "
-                "crie um arquivo .env baseado no .env.example"
-            )
+        # Password pode ser vazia para MySQL padrão
+        # Se não definida nas env vars, usar a configuração padrão
         
         return config
 
@@ -181,30 +180,57 @@ class DatabaseManager:
             return False
 
 
-# Instância global do gerenciador
-db_manager = DatabaseManager()
+# Instância global do gerenciador (lazy initialization)
+db_manager = None
+
+def get_db_manager():
+    """Obtém instância do database manager com lazy loading"""
+    global db_manager
+    if db_manager is None:
+        try:
+            db_manager = DatabaseManager()
+        except Exception as e:
+            print(f"⚠️ MySQL não disponível: {e}")
+            print("💡 Sistema continuará em modo offline")
+            db_manager = None
+    return db_manager
 
 # Funções de conveniência para compatibilidade
 def get_connection():
     """Retorna context manager de conexão"""
-    return db_manager.get_connection()
+    manager = get_db_manager()
+    if manager is None:
+        raise ConnectionError("MySQL não disponível")
+    return manager.get_connection()
 
 def get_cursor(dictionary=True):
     """Retorna context manager de cursor"""
-    return db_manager.get_cursor(dictionary=dictionary)
+    manager = get_db_manager()
+    if manager is None:
+        raise ConnectionError("MySQL não disponível")
+    return manager.get_cursor(dictionary=dictionary)
 
 def execute_query(query: str, params: Optional[tuple] = None, 
                  fetch_one: bool = False, fetch_all: bool = True) -> Any:
     """Executa query simples"""
-    return db_manager.execute_query(query, params, fetch_one, fetch_all)
+    manager = get_db_manager()
+    if manager is None:
+        raise ConnectionError("MySQL não disponível")
+    return manager.execute_query(query, params, fetch_one, fetch_all)
 
 def execute_many(query: str, params_list: list) -> int:
     """Executa múltiplas queries"""
-    return db_manager.execute_many(query, params_list)
+    manager = get_db_manager()
+    if manager is None:
+        raise ConnectionError("MySQL não disponível")
+    return manager.execute_many(query, params_list)
 
 def test_connection() -> bool:
     """Testa conexão"""
-    return db_manager.test_connection()
+    manager = get_db_manager()
+    if manager is None:
+        return False
+    return manager.test_connection()
 
 
 # Queries SQL comuns

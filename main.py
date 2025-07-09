@@ -16,14 +16,8 @@ project_root = Path(__file__).parent
 sys.path.insert(0, str(project_root))
 
 # Carrega variáveis de ambiente do arquivo .env
-load_dotenv()
+load_dotenv(override=True)
 
-# Classe simples para substituir ParallelScraper
-class SimpleScraperConfig:
-    """Configuração simples para substituir ParallelScraper"""
-    
-    def __init__(self, max_workers: int = 3):
-        self.max_workers = max_workers
 from src.utils.search_optimizer import QueryOptimizer
 from src.utils.product_categorizer import ProductCategorizer
 from src.utils.price_monitor import PriceMonitor
@@ -43,9 +37,10 @@ class iFoodMenuSystem:
         self.logger = setup_logger("iFoodMenu")
         self.data_dir = Path(SETTINGS.output_dir)
         
+        # Verifica status do sistema na inicialização
+        self._check_system_status()
+        
         # Inicializa componentes principais
-        # Substituído ParallelScraper por configuração simples
-        self.parallel_scraper = SimpleScraperConfig(max_workers=3)
         self.search_optimizer = QueryOptimizer()
         self.archive_manager = ArchiveManager()
         self.product_categorizer = ProductCategorizer()
@@ -68,8 +63,7 @@ class iFoodMenuSystem:
         self.analysis_menus = AnalysisMenus(self.session_stats, self.data_dir, 
                                           self.product_categorizer, self.price_monitor)
         self.system_menus = SystemMenus(self.session_stats, self.data_dir,
-                                       self.parallel_scraper, self.search_optimizer,
-                                       self.archive_manager)
+                                       self.search_optimizer, self.archive_manager)
     
     def show_header(self):
         """Mostra cabeçalho do sistema"""
@@ -79,28 +73,31 @@ class iFoodMenuSystem:
         print("                      Sistema Integrado v2.0")
         print("═" * 80)
         
-        # Mostra estatísticas da sessão
+        # Mostra configurações atuais
+        print(f"⚙️  Configurações: {SETTINGS.city} | {os.getenv('DB_NAME')} | {os.getenv('DB_USER')}")
+        
+        # Mostra estatísticas do banco de dados real
+        db_stats = self._get_database_stats()
         uptime = datetime.now() - self.session_stats['session_start']
         print(f"📊 Sessão atual: {uptime.seconds//3600:02d}:{(uptime.seconds//60)%60:02d}:{uptime.seconds%60:02d}")
-        print(f"📈 Extrações: {self.session_stats['categories_extracted']} categorias, "
-              f"{self.session_stats['restaurants_extracted']} restaurantes, "
-              f"{self.session_stats['products_extracted']} produtos")
-        print(f"🔍 Análises: {self.session_stats['products_categorized']} categorizados, "
+        print(f"📈 Dados no banco: {db_stats['categories']} categorias, "
+              f"{db_stats['restaurants']} restaurantes, "
+              f"{db_stats['products']} produtos")
+        print(f"🔍 Sessão atual: {self.session_stats['products_categorized']} categorizados, "
               f"{self.session_stats['prices_monitored']} preços monitorados")
         print("═" * 80)
     
     def show_main_menu(self):
         """Mostra menu principal reorganizado"""
         print("\n🎯 MENU PRINCIPAL:")
-        print("1. 🏷️  Extrair Categorias")
-        print("2. 🏪 Extrair Restaurantes")
-        print("3. 🍕 Extrair Produtos")
-        print("4. 🚀 Execução Paralela")
-        print("5. 🔍 Sistema de Busca")
-        print("6. 🏪 Visualizar Restaurantes")
-        print("7. 📊 Relatórios e Análises")
-        print("8. ⚙️  Configurações")
-        print("9. 📋 Status do Sistema")
+        print("1. 🔧 Scrapy Unitário")
+        print("2. 🚀 Execução Paralela")
+        print("3. 🔍 Sistema de Busca")
+        print("4. 🏪 Visualizar Restaurantes")
+        print("5. 📊 Relatórios e Análises")
+        print("6. ⚙️  Configurações")
+        print("7. 📋 Status do Sistema")
+        print("8. ℹ️  Informações do Sistema")
         print("0. 🚪 Sair")
         print("═" * 80)
     
@@ -116,23 +113,21 @@ class iFoodMenuSystem:
                 choice = input("\nEscolha: ").strip()
                 
                 if choice == "1":
-                    self.extraction_menus.menu_extract_categories()
+                    self.extraction_menus.menu_scrapy_unitario()
                 elif choice == "2":
-                    self.extraction_menus.menu_extract_restaurants()
-                elif choice == "3":
-                    self.extraction_menus.menu_extract_products()
-                elif choice == "4":
                     self.system_menus.menu_parallel_execution()
-                elif choice == "5":
+                elif choice == "3":
                     self.system_menus.menu_search_system()
-                elif choice == "6":
+                elif choice == "4":
                     self.system_menus.view_restaurants_menu()
-                elif choice == "7":
+                elif choice == "5":
                     self.system_menus.menu_reports_and_analytics()
-                elif choice == "8":
+                elif choice == "6":
                     self.system_menus.menu_settings_expanded()
-                elif choice == "9":
+                elif choice == "7":
                     self.system_menus.menu_system_status_consolidated()
+                elif choice == "8":
+                    self._show_system_info()
                 elif choice == "0":
                     self._shutdown()
                     break
@@ -165,6 +160,118 @@ class iFoodMenuSystem:
         self.logger.info("Sistema encerrado")
         print("\n✅ Sistema encerrado com sucesso!")
         print("🍔 Obrigado por usar o iFood Scraper!")
+    
+    def _check_system_status(self):
+        """Verifica status do sistema na inicialização"""
+        try:
+            from src.database.database_adapter import get_database_manager
+            db = get_database_manager()
+            self.db_status = True
+            self.logger.info("Conexão com banco de dados estabelecida")
+        except Exception as e:
+            self.db_status = False
+            self.logger.warning(f"Banco de dados não disponível: {e}")
+    
+    def _get_database_stats(self):
+        """Obtém estatísticas reais do banco de dados"""
+        try:
+            from src.database.database_adapter import get_database_manager
+            db = get_database_manager()
+            
+            # Consulta real ao banco de dados
+            stats = db.get_statistics()
+            return {
+                'categories': stats.get('total_categories', 0),
+                'restaurants': stats.get('total_restaurants', 0),
+                'products': stats.get('total_products', 0)
+            }
+        except Exception as e:
+            self.logger.warning(f"Erro ao obter estatísticas do banco: {e}")
+            return {
+                'categories': 0,
+                'restaurants': 0,
+                'products': 0
+            }
+    
+    def _show_system_info(self):
+        """Mostra informações detalhadas do sistema"""
+        os.system('clear' if os.name == 'posix' else 'cls')
+        print("═" * 80)
+        print("                    ℹ️  INFORMAÇÕES DO SISTEMA")
+        print("═" * 80)
+        
+        # Status do Sistema
+        print("\n📊 STATUS DO SISTEMA:")
+        print(f"  ✅ Versão: 2.0")
+        print(f"  ✅ Cidade configurada: {SETTINGS.city}")
+        print(f"  ✅ Banco de dados: {os.getenv('DB_NAME')}")
+        print(f"  ✅ Usuário MySQL: {os.getenv('DB_USER')}")
+        print(f"  ✅ Modo headless: {SETTINGS.headless}")
+        print(f"  ✅ Diretório de saída: {SETTINGS.output_dir}")
+        
+        # Scrapers Disponíveis
+        print("\n🔧 SCRAPERS ATIVOS (4):")
+        print("  ✅ CategoryScraper - Extrai categorias de comida")
+        print("  ✅ RestaurantScraper - Extrai dados dos restaurantes")
+        print("  ✅ ProductScraper - Extrai cardápios e produtos")
+        print("  ✅ WindowsParallelScraper - Execução paralela otimizada")
+        
+        # Funcionalidades
+        print("\n🚀 FUNCIONALIDADES PRINCIPAIS:")
+        print("  1️⃣ Scrapy Unitário (categorias, restaurantes, produtos)")
+        print("  2️⃣ Processamento paralelo para múltiplas categorias")
+        print("  3️⃣ Sistema de busca integrado")
+        print("  4️⃣ Visualização de dados extraídos")
+        print("  5️⃣ Relatórios e análises")
+        print("  6️⃣ Configurações avançadas")
+        print("  7️⃣ Status e monitoramento")
+        print("  8️⃣ Informações do sistema")
+        
+        # Banco de Dados
+        print("\n🗄️ ESTRUTURA DO BANCO DE DADOS:")
+        print("  📋 8 tabelas principais:")
+        print("     • categories - Categorias de comida")
+        print("     • restaurants - Dados dos restaurantes")
+        print("     • products - Cardápios e produtos")
+        print("     • price_history - Histórico de preços")
+        print("     • restaurant_details - Informações extras")
+        print("     • reviews - Avaliações de clientes")
+        print("     • extraction_logs - Logs de extração")
+        print("     • system_config - Configurações do sistema")
+        
+        # Status da Conexão
+        if hasattr(self, 'db_status') and self.db_status:
+            print("\n✅ CONEXÃO COM BANCO: ATIVA")
+            try:
+                from src.database.database_adapter import get_database_manager
+                db = get_database_manager()
+                stats = db.get_statistics()
+                print(f"  📊 Categorias cadastradas: {stats['total_categories']}")
+                print(f"  📊 Restaurantes cadastrados: {stats['total_restaurants']}")
+                print(f"  📊 Produtos cadastrados: {stats['total_products']}")
+            except:
+                pass
+        else:
+            print("\n❌ CONEXÃO COM BANCO: INATIVA")
+        
+        # Instruções de Uso
+        print("\n📖 FLUXO RECOMENDADO:")
+        print("  1. Usar Scrapy Unitário (opção 1) para extrair:")
+        print("     • 1.1 - Categorias")
+        print("     • 1.2 - Restaurantes de categorias escolhidas")
+        print("     • 1.3 - Produtos dos restaurantes")
+        print("  2. Usar execução paralela (opção 2) para processar múltiplas categorias")
+        
+        # Melhorias Recentes
+        print("\n🆕 MELHORIAS RECENTES:")
+        print("  ✅ Sistema otimizado - removidos scrapers não utilizados")
+        print("  ✅ Banco MySQL configurado - ifood_scraper_v3")
+        print("  ✅ Configurações via arquivo .env")
+        print("  ✅ Sistema de logs melhorado")
+        print("  ✅ Tratamento de erros aprimorado")
+        
+        print("\n" + "═" * 80)
+        input("\nPressione Enter para voltar ao menu principal...")
 
 def main():
     """Função principal"""
