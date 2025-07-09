@@ -10,7 +10,7 @@ from typing import Dict, List, Any
 from src.scrapers.category_scraper import CategoryScraper
 from src.scrapers.restaurant_scraper import RestaurantScraper
 from src.scrapers.product_scraper import ProductScraper
-from .base_menu import BaseMenu
+from src.ui.base_menu import BaseMenu
 
 
 class ExtractionMenus(BaseMenu):

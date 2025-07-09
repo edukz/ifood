@@ -8,18 +8,16 @@ from typing import Dict, List, Any
 from datetime import datetime
 
 from src.utils.product_categorizer import ProductCategorizer
-from src.utils.price_monitor import PriceMonitor
-from .base_menu import BaseMenu
+from src.ui.base_menu import BaseMenu
 
 
 class AnalysisMenus(BaseMenu):
     """Menus para análise de dados"""
     
     def __init__(self, session_stats: Dict[str, Any], data_dir: Path,
-                 product_categorizer: ProductCategorizer, price_monitor: PriceMonitor):
+                 product_categorizer: ProductCategorizer):
         super().__init__("Análise", session_stats, data_dir)
         self.product_categorizer = product_categorizer
-        self.price_monitor = price_monitor
     
     # ================== CATEGORIZAÇÃO AUTOMÁTICA ==================
     
@@ -217,180 +215,9 @@ class AnalysisMenus(BaseMenu):
         
         self.pause()
     
-    # ================== MONITORAMENTO DE PREÇOS ==================
+    # ================== MONITORAMENTO DE PREÇOS [REMOVIDO] ==================
     
     def menu_price_monitor(self):
-        """Menu de monitoramento de preços"""
-        options = [
-            "1. 📥 Importar produtos de CSV",
-            "2. 📈 Ver histórico de preços",
-            "3. 📊 Ver mudanças de preços",
-            "4. 🚨 Ver alertas de preços",
-            "5. 💎 Encontrar melhores ofertas",
-            "6. 📋 Gerar relatório de preços",
-            "7. 📊 Estatísticas de produto",
-            "8. ⚙️  Configurar alertas"
-        ]
-        
-        self.show_menu("💰 MONITORAMENTO DE PREÇOS", options)
-        choice = self.get_user_choice(8)
-        
-        if choice == "1":
-            self._import_products_for_monitoring()
-        elif choice == "2":
-            self._view_price_history()
-        elif choice == "3":
-            self._view_price_changes()
-        elif choice == "4":
-            self._view_price_alerts()
-        elif choice == "5":
-            self._find_best_deals()
-        elif choice == "6":
-            self._generate_price_report()
-        elif choice == "7":
-            self._view_product_price_stats()
-        elif choice == "8":
-            self._configure_price_alerts()
-        elif choice == "0":
-            return
-        else:
-            self.show_invalid_option()
-    
-    def _import_products_for_monitoring(self):
-        """Importa produtos para monitoramento de preços"""
-        print("\n📥 Importação de produtos para monitoramento")
-        file_path = input("Caminho do arquivo CSV: ").strip()
-        
-        try:
-            csv_path = self.find_file(file_path, ["products"])
-            if not csv_path:
-                self.show_error("Arquivo não encontrado!")
-                return
-            
-            print(f"\n🔄 Importando produtos de {csv_path.name}...")
-            result = self.price_monitor.import_products_from_csv(csv_path)
-            
-            self.session_stats['prices_monitored'] += result['imported_count']
-            
-            self.show_success(f"{result['imported_count']} produtos importados!")
-            if result['errors']:
-                self.show_warning(f"{len(result['errors'])} erros encontrados")
-            
-        except Exception as e:
-            self.show_error(str(e))
-        
-        self.pause()
-    
-    def _view_price_history(self):
-        """Visualiza histórico de preços"""
-        print("\n📈 Histórico de preços")
-        product_id = input("ID do produto: ").strip()
-        days = input("Dias de histórico [30]: ").strip()
-        days = int(days) if days.isdigit() else 30
-        
-        history = self.price_monitor.get_price_history(product_id, days=days)
-        
-        if history:
-            print(f"\n📊 Histórico de {len(history)} entradas:")
-            for entry in history[-15:]:  # Últimas 15
-                timestamp = datetime.fromisoformat(entry['timestamp'])
-                promo = " 🏷️" if entry['promotion'] else ""
-                print(f"  {timestamp.strftime('%d/%m %H:%M')} - R$ {entry['price']:6.2f}{promo}")
-        else:
-            self.show_error("Nenhum histórico encontrado")
-        
-        self.pause()
-    
-    def _view_price_changes(self):
-        """Visualiza mudanças de preços"""
-        print("\n📊 Mudanças de preços")
-        days = input("Dias para análise [7]: ").strip()
-        days = int(days) if days.isdigit() else 7
-        
-        changes = self.price_monitor.get_price_changes(days=days)
-        
-        print(f"\n📈 {len(changes)} mudanças nos últimos {days} dias:")
-        for change in changes[:20]:
-            direction = "↑" if change['change_percentage'] > 0 else "↓"
-            timestamp = datetime.fromisoformat(change['timestamp'])
-            print(f"  {timestamp.strftime('%d/%m')} {change['product_name'][:25]:<25} {direction} {change['change_percentage']:+6.1f}%")
-        
-        self.pause()
-    
-    def _view_price_alerts(self):
-        """Visualiza alertas de preços"""
-        print("\n🚨 Alertas de preços")
-        alerts = self.price_monitor.get_price_alerts()
-        
-        print(f"\n⚠️ {len(alerts)} alertas não reconhecidos:")
-        for alert in alerts[:15]:
-            timestamp = datetime.fromisoformat(alert['timestamp'])
-            print(f"  {alert['id']:3d}. [{timestamp.strftime('%d/%m')}] {alert['message']}")
-        
-        if alerts:
-            try:
-                alert_id = input("\nID do alerta para reconhecer (Enter para pular): ").strip()
-                if alert_id.isdigit():
-                    if self.price_monitor.acknowledge_alert(int(alert_id)):
-                        self.show_success("Alerta reconhecido!")
-                    else:
-                        self.show_error("Erro ao reconhecer alerta")
-            except:
-                pass
-        
-        self.pause()
-    
-    def _find_best_deals(self):
-        """Encontra melhores ofertas"""
-        print("\n💎 Melhores ofertas atuais")
-        
-        deals = self.price_monitor.find_best_deals(max_results=15)
-        
-        print(f"\n💰 {len(deals)} ofertas encontradas:")
-        for i, deal in enumerate(deals, 1):
-            print(f"{i:2d}. {deal['product_name'][:35]:<35} R$ {deal['current_price']:6.2f} "
-                 f"({deal['discount_percentage']:4.1f}% off)")
-        
-        self.pause()
-    
-    def _generate_price_report(self):
-        """Gera relatório de preços"""
-        print("\n📋 Geração de relatório de preços")
-        days = input("Dias para análise [30]: ").strip()
-        days = int(days) if days.isdigit() else 30
-        
-        try:
-            report_path = self.price_monitor.generate_price_report(days=days)
-            self.show_success(f"Relatório gerado: {report_path.name}")
-        except Exception as e:
-            self.show_error(str(e))
-        
-        self.pause()
-    
-    def _view_product_price_stats(self):
-        """Visualiza estatísticas de preço de produto"""
-        print("\n📊 Estatísticas de produto")
-        product_id = input("ID do produto: ").strip()
-        
-        stats = self.price_monitor.get_price_statistics(product_id)
-        
-        if stats:
-            print(f"\n📈 Estatísticas para '{stats.product_name}':")
-            print(f"  Preço atual: R$ {stats.current_price:.2f}")
-            print(f"  Mínimo: R$ {stats.min_price:.2f}")
-            print(f"  Máximo: R$ {stats.max_price:.2f}")
-            print(f"  Média: R$ {stats.avg_price:.2f}")
-            print(f"  Mediana: R$ {stats.median_price:.2f}")
-            print(f"  Tendência: {stats.trend}")
-            print(f"  Volatilidade: {stats.price_volatility:.2f}")
-            print(f"  Total de mudanças: {stats.total_changes}")
-        else:
-            self.show_error("Produto não encontrado")
-        
-        self.pause()
-    
-    def _configure_price_alerts(self):
-        """Configura alertas de preços"""
-        print("\n⚙️  Configuração de alertas")
-        print("Funcionalidade em desenvolvimento...")
+        """Menu de monitoramento de preços [REMOVIDO]"""
+        self.show_error("Funcionalidade de monitoramento de preços foi removida do sistema")
         self.pause()

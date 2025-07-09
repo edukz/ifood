@@ -375,6 +375,29 @@ class DatabaseManagerV2:
     
     # ===== OPERAÇÕES DE CONSULTA =====
     
+    def execute_query(self, query: str, params: tuple = None, fetch_one: bool = False, fetch_all: bool = False):
+        """
+        Executes a SQL query and returns results
+        
+        Args:
+            query: SQL query string
+            params: Query parameters
+            fetch_one: Return single row
+            fetch_all: Return all rows
+        
+        Returns:
+            Query results or None
+        """
+        with self.get_cursor() as (cursor, _):
+            cursor.execute(query, params or ())
+            
+            if fetch_one:
+                return cursor.fetchone()
+            elif fetch_all:
+                return cursor.fetchall()
+            else:
+                return cursor.fetchall()  # Default behavior
+    
     def get_statistics(self) -> Dict[str, Any]:
         """Retorna estatísticas gerais do banco"""
         stats = {}

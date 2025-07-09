@@ -20,7 +20,6 @@ load_dotenv(override=True)
 
 from src.utils.search_optimizer import QueryOptimizer
 from src.utils.product_categorizer import ProductCategorizer
-from src.utils.price_monitor import PriceMonitor
 from tools.archive_manager import ArchiveManager
 from src.utils.logger import setup_logger
 from src.config.settings import SETTINGS
@@ -44,7 +43,6 @@ class iFoodMenuSystem:
         self.search_optimizer = QueryOptimizer()
         self.archive_manager = ArchiveManager()
         self.product_categorizer = ProductCategorizer()
-        self.price_monitor = PriceMonitor()
         
         # Estatísticas da sessão
         self.session_stats = {
@@ -61,7 +59,7 @@ class iFoodMenuSystem:
         # Inicializa módulos de menu
         self.extraction_menus = ExtractionMenus(self.session_stats, self.data_dir)
         self.analysis_menus = AnalysisMenus(self.session_stats, self.data_dir, 
-                                          self.product_categorizer, self.price_monitor)
+                                          self.product_categorizer)
         self.system_menus = SystemMenus(self.session_stats, self.data_dir,
                                        self.search_optimizer, self.archive_manager)
     
@@ -83,8 +81,7 @@ class iFoodMenuSystem:
         print(f"📈 Dados no banco: {db_stats['categories']} categorias, "
               f"{db_stats['restaurants']} restaurantes, "
               f"{db_stats['products']} produtos")
-        print(f"🔍 Sessão atual: {self.session_stats['products_categorized']} categorizados, "
-              f"{self.session_stats['prices_monitored']} preços monitorados")
+        print(f"🔍 Sessão atual: {self.session_stats['products_categorized']} categorizados")
         print("═" * 80)
     
     def show_main_menu(self):
@@ -115,17 +112,17 @@ class iFoodMenuSystem:
                 if choice == "1":
                     self.extraction_menus.menu_scrapy_unitario()
                 elif choice == "2":
-                    self.system_menus.menu_parallel_execution()
+                    self.system_menus.parallel_menus.menu_parallel_execution()
                 elif choice == "3":
-                    self.system_menus.menu_search_system()
+                    self.system_menus.search_menus.menu_search_system()
                 elif choice == "4":
-                    self.system_menus.view_restaurants_menu()
+                    self._view_restaurants_menu()
                 elif choice == "5":
-                    self.system_menus.menu_reports_and_analytics()
+                    self.system_menus.reports_menus.menu_reports()
                 elif choice == "6":
-                    self.system_menus.menu_settings_expanded()
+                    self.system_menus.config_menus.menu_system_config()
                 elif choice == "7":
-                    self.system_menus.menu_system_status_consolidated()
+                    self.system_menus.status_menus.menu_system_status()
                 elif choice == "8":
                     self._show_system_info()
                 elif choice == "0":
@@ -192,6 +189,16 @@ class iFoodMenuSystem:
                 'restaurants': 0,
                 'products': 0
             }
+    
+    def _view_restaurants_menu(self):
+        """Menu para visualizar restaurantes"""
+        try:
+            # Usar o sistema de busca para visualizar restaurantes
+            self.system_menus.search_menus.menu_search_system()
+        except Exception as e:
+            self.logger.error(f"Erro ao acessar menu de restaurantes: {e}")
+            print(f"❌ Erro ao acessar menu de restaurantes: {e}")
+            input("\nPressione Enter para continuar...")
     
     def _show_system_info(self):
         """Mostra informações detalhadas do sistema"""

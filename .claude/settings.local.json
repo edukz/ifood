@@ -34,7 +34,8 @@
       "Bash(test:*)",
       "Bash(venv/bin/pip install:*)",
       "Bash(venv/bin/python -m pip install:*)",
-      "Bash(cp:*)"
+      "Bash(cp:*)",
+      "Bash(pip install:*)"
     ],
     "deny": []
   }
